@@ -26,10 +26,28 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   bool _running = false;
   int _heartbeats = 0;
+  int _windows = 0;
+  String _lastWindow = '-';
+  String _accelMean = '-';
+  String _gyroMean = '-';
+  String _accelCount = '-';
+
+  String _fmt(Object? v) => v is num ? v.toStringAsFixed(3) : '-';
 
   void _onData(Object data) {
-    if (data is Map && data.containsKey('heartbeat')) {
+    if (data is! Map) return;
+    if (data.containsKey('heartbeat')) {
       setState(() => _heartbeats++);
+    }
+    final w = data['window'];
+    if (w is Map) {
+      setState(() {
+        _windows++;
+        _lastWindow = '${w['window_end_ts'] ?? '-'}';
+        _accelMean = _fmt(w['accel_mag_mean']);
+        _gyroMean = _fmt(w['gyro_mag_mean']);
+        _accelCount = '${w['sample_count_accel'] ?? '-'}';
+      });
     }
   }
 
@@ -89,6 +107,22 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(_running ? 'Session running' : 'Idle'),
             Text('Heartbeats received: $_heartbeats'),
             const SizedBox(height: 16),
+            Card(
+              margin: const EdgeInsets.all(16),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Windows this session: $_windows'),
+                    Text('Last window: $_lastWindow'),
+                    Text('Accel magnitude mean: $_accelMean'),
+                    Text('Gyro magnitude mean: $_gyroMean'),
+                    Text('Accel samples (last window): $_accelCount'),
+                  ],
+                ),
+              ),
+            ),
             ElevatedButton(
               onPressed: _running ? _stop : _start,
               child: Text(_running ? 'Stop session' : 'Start session'),
