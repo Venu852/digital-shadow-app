@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:test_app/service/task_handler.dart';
+import 'package:test_app/data/db.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,8 +32,17 @@ class _HomeScreenState extends State<HomeScreen> {
   String _accelMean = '-';
   String _gyroMean = '-';
   String _accelCount = '-';
+  int _stored = 0;
 
   String _fmt(Object? v) => v is num ? v.toStringAsFixed(3) : '-';
+
+  Future<void> _refreshStored() async {
+    try {
+      final n = await ShadowDb.countWindows();
+      if (mounted) setState(() => _stored = n);
+    } catch (_) {}
+  }
+
 
   void _onData(Object data) {
     if (data is! Map) return;
@@ -48,6 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _gyroMean = _fmt(w['gyro_mag_mean']);
         _accelCount = '${w['sample_count_accel'] ?? '-'}';
       });
+      _refreshStored();
     }
   }
 
@@ -71,6 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
     FlutterForegroundTask.isRunningService.then((v) {
       if (mounted) setState(() => _running = v);
     });
+    _refreshStored();
   }
 
   @override
@@ -119,6 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Text('Accel magnitude mean: $_accelMean'),
                     Text('Gyro magnitude mean: $_gyroMean'),
                     Text('Accel samples (last window): $_accelCount'),
+                    Text('Stored windows on device: $_stored'),
                   ],
                 ),
               ),
@@ -126,6 +139,31 @@ class _HomeScreenState extends State<HomeScreen> {
             ElevatedButton(
               onPressed: _running ? _stop : _start,
               child: Text(_running ? 'Stop session' : 'Start session'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (c) => AlertDialog(
+                    title: const Text('Delete all data?'),
+                    content: const Text(
+                        'This removes every stored window on this phone.'),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(c, false),
+                          child: const Text('Cancel')),
+                      TextButton(
+                          onPressed: () => Navigator.pop(c, true),
+                          child: const Text('Delete')),
+                    ],
+                  ),
+                );
+                if (ok == true) {
+                  await ShadowDb.deleteAll();
+                  _refreshStored();
+                }
+              },
+              child: const Text('Delete all data'),
             ),
           ],
         ),

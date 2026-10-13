@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:test_app/service/window_aggregator.dart';
+import 'package:test_app/data/db.dart';
+
 
 @pragma('vm:entry-point')
 void startCallback() {
@@ -22,6 +24,7 @@ class ShadowTaskHandler extends TaskHandler {
   StreamSubscription<dynamic>? _gyroSub;
   int? _batteryStart;
   int _windowCount = 0;
+  int? _sessionId;
 
   Future<int?> _readBatteryLevel() async {
     try {
@@ -61,6 +64,12 @@ class ShadowTaskHandler extends TaskHandler {
     debugPrint('ShadowTask started $timestamp');
     _batteryStart = await _readBatteryLevel();
     _agg.start(timestamp);
+    try {
+      await ShadowDb.purgeOlderThan(30);
+      _sessionId = await ShadowDb.startSession(timestamp);
+    } catch (e) {
+      debugPrint('WARN db start: $e');
+    }
     try {
       _accelSub = accelerometerEventStream(
         samplingPeriod: const Duration(milliseconds: 50),
@@ -109,6 +118,11 @@ class ShadowTaskHandler extends TaskHandler {
       );
       _batteryStart = batteryEnd;
       _windowCount++;
+      try {
+        await ShadowDb.insertWindow(_sessionId, summary);
+      } catch (e) {
+        debugPrint('WARN db insert: $e');
+      }
       debugPrint('WINDOW ${jsonEncode(summary)}');
       FlutterForegroundTask.sendDataToMain({'window': summary});
       try {
@@ -128,6 +142,12 @@ class ShadowTaskHandler extends TaskHandler {
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
     await _accelSub?.cancel();
     await _gyroSub?.cancel();
+    try {
+      final id = _sessionId;
+      if (id != null) await ShadowDb.endSession(id, timestamp);
+    } catch (e) {
+      debugPrint('WARN db end: $e');
+    }
     debugPrint('ShadowTask destroyed');
   }
 }
