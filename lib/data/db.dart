@@ -145,6 +145,19 @@ class ShadowDb {
         whereArgs: [fromDay, toDay]);
   }
 
+  static Future<Map<String, String>> getSettingsByPrefix(String prefix) async {
+    final db = await open();
+    final r = await db.query('settings',
+        where: 'setting_key LIKE ?', whereArgs: ['$prefix%']);
+    final out = <String, String>{};
+    for (final m in r) {
+      final k = m['setting_key'] as String?;
+      final v = m['setting_value'] as String?;
+      if (k != null && v != null) out[k] = v;
+    }
+    return out;
+  }
+
   static Future<void> deleteAll() async {
     final db = await open();
     await db.delete('windows');

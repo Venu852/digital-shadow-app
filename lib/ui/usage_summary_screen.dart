@@ -47,6 +47,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
   int _days = 1;
   List<_Row> _rows = [];
   Map<AppCategory, int> _limits = {};
+  Map<String, int> _appLimits = {};
 
   @override
   void initState() {
@@ -112,10 +113,19 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
       final n = int.tryParse(v ?? '');
       if (n != null && n > 0) limits[c] = n;
     }
+    final appLimits = <String, int>{};
+    final stored = await ShadowDb.getSettingsByPrefix('limit_app_');
+    stored.forEach((k, v) {
+      final n = int.tryParse(v);
+      if (n != null && n > 0) {
+        appLimits[k.substring('limit_app_'.length)] = n;
+      }
+    });
     if (mounted) {
       setState(() {
         _rows = rows;
         _limits = limits;
+        _appLimits = appLimits;
       });
     }
   }
@@ -150,12 +160,14 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
     return '${m ~/ 60}h ${m % 60}m';
   }
 
-  Future<void> _editLimit(AppCategory c) async {
-    final ctrl = TextEditingController(text: _limits[c]?.toString() ?? '');
+  /// Asks for a number of minutes. Returns null if cancelled, otherwise the
+  /// typed text (empty means "clear the limit").
+  Future<String?> _promptMinutes(String title, int? current) async {
+    final ctrl = TextEditingController(text: current?.toString() ?? '');
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Daily limit: ${c.label}'),
+        title: Text(title),
         content: TextField(
           controller: ctrl,
           keyboardType: TextInputType.number,
@@ -172,12 +184,25 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
         ],
       ),
     );
-    if (saved == true) {
-      final n = int.tryParse(ctrl.text.trim());
-      await ShadowDb.setSetting(
-          'limit_min_${c.name}', (n != null && n > 0) ? '$n' : '');
-      await _loadRows();
-    }
+    return saved == true ? ctrl.text.trim() : null;
+  }
+
+  Future<void> _saveLimit(String key, String? text) async {
+    if (text == null) return;
+    final n = int.tryParse(text);
+    await ShadowDb.setSetting(key, (n != null && n > 0) ? '$n' : '');
+    await _loadRows();
+  }
+
+  Future<void> _editLimit(AppCategory c) async {
+    final text = await _promptMinutes('Daily limit: ${c.label}', _limits[c]);
+    await _saveLimit('limit_min_${c.name}', text);
+  }
+
+  Future<void> _editAppLimit(String package, String label) async {
+    final text =
+    await _promptMinutes('Daily limit: $label', _appLimits[package]);
+    await _saveLimit('limit_app_$package', text);
   }
 
   Widget _catCard(AppCategory c, int ms, int total) {
@@ -265,6 +290,24 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
         child: Text('Total app time: ${_fmt(total)}',
             style: Theme.of(context).textTheme.titleLarge),
       ));
+      if (_days == 1) {
+        final over = <String>[];
+        for (final e in catList) {
+          final l = _limits[e.key];
+          if (l != null && e.value > l * 60000) over.add(e.key.label);
+        }
+        for (final a in apps) {
+          final l = _appLimits[a.package];
+          if (l != null && a.ms > l * 60000) over.add(a.label);
+        }
+        if (over.isNotEmpty) {
+          children.add(Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text('Over limit today: ${over.join(', ')}',
+                style: const TextStyle(color: Colors.red)),
+          ));
+        }
+      }
       if (apps.isEmpty && !_loading) {
         children.add(const Padding(
           padding: EdgeInsets.all(24),
@@ -287,16 +330,30 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
           child: Text('Top apps',
               style: TextStyle(fontWeight: FontWeight.bold)),
         ));
-        for (final a in apps.take(15)) {
+        for (final a in apps) {
+          final limit = _appLimits[a.package];
+          final limMs = limit == null ? 0 : limit * 60000;
+          final showLimit = _days == 1 && limit != null;
           children.add(ListTile(
+            onTap: () => _editAppLimit(a.package, a.label),
             title: Text(a.label),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 4),
-                LinearProgressIndicator(value: a.ms / maxMs),
+                LinearProgressIndicator(
+                    value: showLimit
+                        ? (a.ms / limMs).clamp(0.0, 1.0).toDouble()
+                        : a.ms / maxMs),
                 const SizedBox(height: 4),
                 Text('${a.cat.label} · ${a.sessions} opens'),
+                if (showLimit)
+                  Text(
+                    a.ms > limMs
+                        ? 'Over your ${limit}m limit by ${_fmt(a.ms - limMs)}'
+                        : 'Limit ${limit}m, ${_fmt(limMs - a.ms)} left',
+                    style: TextStyle(color: a.ms > limMs ? Colors.red : null),
+                  ),
               ],
             ),
             trailing: Text(_fmt(a.ms)),
