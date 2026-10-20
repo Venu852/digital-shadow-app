@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:test_app/data/db.dart';
 import 'package:test_app/service/usage_reader.dart';
+import 'package:test_app/service/usage_sync.dart';
 
 class UsageTestScreen extends StatefulWidget {
   const UsageTestScreen({super.key});
@@ -13,13 +15,16 @@ class _UsageTestScreenState extends State<UsageTestScreen>
   bool _access = false;
   bool _loading = false;
   String _error = '';
+  String _syncInfo = '';
   List<AppUsage> _apps = [];
+  List<Map<String, Object?>> _stored = [];
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkAccess();
+    _loadStored();
   }
 
   @override
@@ -47,6 +52,15 @@ class _UsageTestScreenState extends State<UsageTestScreen>
     }
   }
 
+  Future<void> _loadStored() async {
+    try {
+      final s = await ShadowDb.usageDaySummaries();
+      if (mounted) setState(() => _stored = s);
+    } catch (e) {
+      if (mounted) setState(() => _error = 'DB read failed: $e');
+    }
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -60,6 +74,22 @@ class _UsageTestScreenState extends State<UsageTestScreen>
       if (mounted) setState(() => _apps = list);
     } catch (e) {
       if (mounted) setState(() => _error = 'Query failed: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _sync() async {
+    setState(() {
+      _loading = true;
+      _error = '';
+    });
+    try {
+      final n = await UsageSync.syncRecentDays();
+      if (mounted) setState(() => _syncInfo = 'Synced $n day(s)');
+      await _loadStored();
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Sync failed: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -82,19 +112,24 @@ class _UsageTestScreenState extends State<UsageTestScreen>
           children: [
             Text('Usage access granted: ${_access ? 'YES' : 'NO'}'),
             const SizedBox(height: 8),
-            Row(
+            Wrap(
+              spacing: 8,
               children: [
                 ElevatedButton(
                   onPressed: () => UsageReader.openSettings(),
-                  child: const Text('Open usage access settings'),
+                  child: const Text('Open settings'),
                 ),
-                const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: (_access && !_loading) ? _load : null,
-                  child: const Text("Load today's usage"),
+                  child: const Text("Today's usage"),
+                ),
+                ElevatedButton(
+                  onPressed: (_access && !_loading) ? _sync : null,
+                  child: const Text('Sync to database'),
                 ),
               ],
             ),
+            if (_syncInfo.isNotEmpty) Text(_syncInfo),
             if (_error.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -102,6 +137,11 @@ class _UsageTestScreenState extends State<UsageTestScreen>
               ),
             const SizedBox(height: 8),
             if (_loading) const LinearProgressIndicator(),
+            Text('Days stored in database: ${_stored.length}',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            ..._stored.take(8).map((r) => Text(
+                '${r['day']}  ${_fmt((r['total_ms'] as int?) ?? 0)}  (${r['apps']} apps)')),
+            const Divider(),
             Expanded(
               child: ListView.builder(
                 itemCount: _apps.length,

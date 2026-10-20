@@ -3,6 +3,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:test_app/service/task_handler.dart';
 import 'package:test_app/data/db.dart';
 import 'package:test_app/ui/usage_test_screen.dart';
+import 'package:test_app/service/usage_sync.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -84,6 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) setState(() => _running = v);
     });
     _refreshStored();
+    UsageSync.syncRecentDays().catchError((_) => 0);
   }
 
   @override
