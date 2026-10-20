@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:test_app/service/task_handler.dart';
 import 'package:test_app/data/db.dart';
+import 'package:test_app/ui/usage_test_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -164,6 +165,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
               },
               child: const Text('Delete all data'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const UsageTestScreen()),
+              ),
+              child: const Text('App usage (test)'),
             ),
           ],
         ),
