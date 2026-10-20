@@ -49,6 +49,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
   Map<AppCategory, int> _limits = {};
   Map<String, int> _appLimits = {};
   List<int> _hourly = List<int>.filled(24, 0);
+  int? _selHour;
 
   @override
   void initState() {
@@ -210,53 +211,75 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
     await _saveLimit('limit_app_$package', text);
   }
 
+  String _hourLabel(int h) {
+    final h12 = h % 12 == 0 ? 12 : h % 12;
+    return '$h12${h < 12 ? 'am' : 'pm'}';
+  }
+
+  String _hourRange(int h) => '${_hourLabel(h)}–${_hourLabel((h + 1) % 24)}';
+
+  void _selectAt(double dx, double width, {bool toggle = false}) {
+    const left = _HourChartPainter.leftAxis;
+    if (dx < left) return;
+    final cellW = (width - left) / 24;
+    final idx = ((dx - left) / cellW).floor().clamp(0, 23).toInt();
+    setState(() => _selHour = (toggle && _selHour == idx) ? null : idx);
+  }
+
   Widget _hourChart() {
-    final maxH = _hourly.fold<int>(0, (m, v) => v > m ? v : m);
     final totalH = _hourly.fold<int>(0, (s, v) => s + v);
     if (totalH <= 0) return const SizedBox.shrink();
     final late = _hourly.sublist(0, 5).fold<int>(0, (s, v) => s + v);
     final latePct = (late * 100 / totalH).round();
+    final sel = _selHour;
+    final scheme = Theme.of(context).colorScheme;
+    final info = sel == null
+        ? 'Tap or drag across the bars to see the exact hour'
+        : '${_hourRange(sel)}: ${_fmt(_hourly[sel])} '
+        '(${(_hourly[sel] * 100 / totalH).round()}% of total)';
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Usage by hour of day',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 100,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: List.generate(24, (h) {
-                final frac = maxH == 0 ? 0.0 : _hourly[h] / maxH;
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 1),
-                    child: Container(
-                      height: 2 + 98 * frac,
-                      color: h < 5
-                          ? Colors.deepOrange
-                          : Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                );
-              }),
+          Text(
+            _days == 1
+                ? 'Usage by hour of day'
+                : 'Usage by hour of day (all 7 days combined)',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            info,
+            style: TextStyle(
+              color: sel == null ? scheme.onSurfaceVariant : scheme.primary,
+              fontWeight: sel == null ? FontWeight.normal : FontWeight.bold,
             ),
           ),
+          const SizedBox(height: 8),
+          LayoutBuilder(builder: (context, c) {
+            final w = c.maxWidth;
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (d) => _selectAt(d.localPosition.dx, w, toggle: true),
+              onHorizontalDragUpdate: (d) =>
+                  _selectAt(d.localPosition.dx, w),
+              child: CustomPaint(
+                size: Size(w, 190),
+                painter: _HourChartPainter(
+                  values: _hourly,
+                  selected: sel,
+                  barColor: scheme.primary,
+                  lateColor: Colors.deepOrange,
+                  gridColor: scheme.outlineVariant,
+                  textColor: scheme.onSurfaceVariant,
+                ),
+              ),
+            );
+          }),
           const SizedBox(height: 4),
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('12am'),
-              Text('6am'),
-              Text('12pm'),
-              Text('6pm'),
-              Text('11pm'),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text('Late night (12am–5am): ${_fmt(late)} ($latePct% of total)'),
+          Text('Late night (12am–5am, orange bars): ${_fmt(late)} '
+              '($latePct% of total)'),
         ],
       ),
     );
@@ -444,7 +467,10 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
               ],
               selected: {_days},
               onSelectionChanged: (s) {
-                setState(() => _days = s.first);
+                setState(() {
+                  _days = s.first;
+                  _selHour = null;
+                });
                 _refresh();
               },
             ),
@@ -468,4 +494,163 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
       ),
     );
   }
+}
+class _HourChartPainter extends CustomPainter {
+  static const double leftAxis = 40;
+  static const double topPad = 18;
+  static const double bottomAxis = 24;
+
+  final List<int> values;
+  final int? selected;
+  final Color barColor;
+  final Color lateColor;
+  final Color gridColor;
+  final Color textColor;
+
+  const _HourChartPainter({
+    required this.values,
+    required this.selected,
+    required this.barColor,
+    required this.lateColor,
+    required this.gridColor,
+    required this.textColor,
+  });
+
+  static String _fmtMin(int m) {
+    if (m < 60) return '${m}m';
+    final h = m ~/ 60;
+    final r = m % 60;
+    return r == 0 ? '${h}h' : '${h}h ${r}m';
+  }
+
+  static String _hourName(int h) {
+    final h12 = h % 12 == 0 ? 12 : h % 12;
+    return '$h12${h < 12 ? 'am' : 'pm'}';
+  }
+
+  /// ax: 0 = text starts at pos, 0.5 = centered, 1 = ends at pos.
+  /// ay: 0 = text top at pos, 0.5 = centered, 1 = text bottom at pos.
+  void _drawText(Canvas canvas, String s, Offset pos,
+      {double ax = 0.5, double ay = 0.0, bool bold = false}) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: s,
+        style: TextStyle(
+          color: textColor,
+          fontSize: 10,
+          fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset(pos.dx - tp.width * ax, pos.dy - tp.height * ay));
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final chartW = size.width - leftAxis;
+    final chartH = size.height - topPad - bottomAxis;
+    final cellW = chartW / 24;
+    final baseY = topPad + chartH;
+    final sel = selected;
+
+    var maxMs = 0;
+    for (final v in values) {
+      if (v > maxMs) maxMs = v;
+    }
+    final maxMin = maxMs / 60000.0;
+    const steps = [5, 10, 15, 30, 60, 120, 180, 240, 360, 480, 720];
+    var step = steps.last;
+    for (final s in steps) {
+      if (maxMin / s <= 3) {
+        step = s;
+        break;
+      }
+    }
+    var nLines = (maxMin / step).ceil();
+    if (nLines < 1) nLines = 1;
+    final axisMaxMin = (nLines * step).toDouble();
+    double yOf(double minutes) => baseY - (minutes / axisMaxMin) * chartH;
+
+    // Highlight band behind the selected hour.
+    if (sel != null) {
+      canvas.drawRect(
+        Rect.fromLTWH(leftAxis + sel * cellW, topPad, cellW, chartH),
+        Paint()..color = textColor.withValues(alpha: 0.10),
+      );
+    }
+
+    // Horizontal gridlines with labels.
+    final gridPaint = Paint()..strokeWidth = 1;
+    for (var k = 0; k <= nLines; k++) {
+      final y = yOf((k * step).toDouble());
+      gridPaint.color = k == 0 ? textColor : gridColor;
+      canvas.drawLine(Offset(leftAxis, y), Offset(size.width, y), gridPaint);
+      _drawText(canvas, _fmtMin(k * step), Offset(leftAxis - 6, y),
+          ax: 1, ay: 0.5);
+    }
+
+    // Bars.
+    for (var h = 0; h < 24; h++) {
+      final v = values[h] / 60000.0;
+      if (v <= 0) continue;
+      final cx = leftAxis + (h + 0.5) * cellW;
+      final barW = cellW * 0.7;
+      var barH = v / axisMaxMin * chartH;
+      if (barH < 1) barH = 1;
+      final rect = Rect.fromLTWH(cx - barW / 2, baseY - barH, barW, barH);
+      final rrect = RRect.fromRectAndCorners(
+        rect,
+        topLeft: const Radius.circular(2),
+        topRight: const Radius.circular(2),
+      );
+      final base = h < 5 ? lateColor : barColor;
+      final isSel = sel == h;
+      final color =
+      sel == null || isSel ? base : base.withValues(alpha: 0.35);
+      canvas.drawRRect(rrect, Paint()..color = color);
+      if (isSel) {
+        canvas.drawRRect(
+          rrect,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = textColor,
+        );
+        _drawText(canvas, _fmtMin((values[h] / 60000).round()),
+            Offset(cx, rect.top - 3),
+            ax: 0.5, ay: 1.0, bold: true);
+      }
+    }
+
+    // X axis: a tick under every bar, a label under every third bar.
+    final tickPaint = Paint()
+      ..color = textColor
+      ..strokeWidth = 1;
+    for (var h = 0; h < 24; h++) {
+      final cx = leftAxis + (h + 0.5) * cellW;
+      final major = h % 3 == 0;
+      canvas.drawLine(
+          Offset(cx, baseY), Offset(cx, baseY + (major ? 6 : 3)), tickPaint);
+      if (major) {
+        final nearSel = sel != null && sel != h && (sel - h).abs() <= 1;
+        if (!nearSel) {
+          _drawText(canvas, _hourName(h), Offset(cx, baseY + 8),
+              ax: 0.5, ay: 0);
+        }
+      }
+    }
+    if (sel != null) {
+      final cx = leftAxis + (sel + 0.5) * cellW;
+      _drawText(canvas, _hourName(sel), Offset(cx, baseY + 8),
+          ax: 0.5, ay: 0, bold: true);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _HourChartPainter old) =>
+      old.values != values ||
+          old.selected != selected ||
+          old.barColor != barColor ||
+          old.textColor != textColor;
 }
