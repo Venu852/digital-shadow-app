@@ -15,13 +15,18 @@ class ShadowDb {
         'CREATE TABLE IF NOT EXISTS settings(setting_key TEXT PRIMARY KEY, setting_value TEXT)');
   }
 
+  static Future<void> _createHourlyTable(Database db) async {
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS app_usage_hourly(day TEXT NOT NULL, hour INTEGER NOT NULL, package TEXT NOT NULL, total_ms INTEGER NOT NULL, PRIMARY KEY(day, hour, package))');
+  }
+
   static Future<Database> open() async {
     final existing = _db;
     if (existing != null) return existing;
     final path = '${await getDatabasesPath()}/digital_shadow.db';
     final db = await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onConfigure: (db) async {
         try {
           await db.rawQuery('PRAGMA journal_mode=WAL');
@@ -36,9 +41,11 @@ class ShadowDb {
             'CREATE INDEX idx_windows_session ON windows(session_id)');
         await _createUsageTable(db);
         await _createSettingsTable(db);
+        await _createHourlyTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 3) await _createSettingsTable(db);
+        if (oldVersion < 4) await _createHourlyTable(db);
       },
     );
     _db = db;
@@ -158,10 +165,39 @@ class ShadowDb {
     return out;
   }
 
+  static Future<void> replaceUsageHourly(
+      String day, List<Map<String, Object?>> rows) async {
+    final db = await open();
+    await db.transaction((txn) async {
+      await txn.delete('app_usage_hourly', where: 'day = ?', whereArgs: [day]);
+      final batch = txn.batch();
+      for (final r in rows) {
+        batch.insert('app_usage_hourly', {...r, 'day': day});
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  static Future<List<int>> hourlyTotals(String fromDay, String toDay) async {
+    final db = await open();
+    final r = await db.rawQuery(
+        'SELECT hour, SUM(total_ms) AS total_ms FROM app_usage_hourly WHERE day >= ? AND day <= ? GROUP BY hour',
+        [fromDay, toDay]);
+    final out = List<int>.filled(24, 0);
+    for (final m in r) {
+      final h = (m['hour'] as num?)?.toInt();
+      if (h != null && h >= 0 && h < 24) {
+        out[h] = ((m['total_ms'] as num?) ?? 0).toInt();
+      }
+    }
+    return out;
+  }
+
   static Future<void> deleteAll() async {
     final db = await open();
     await db.delete('windows');
     await db.delete('sessions');
     await db.delete('app_usage_daily');
+    await db.delete('app_usage_hourly');
   }
 }

@@ -9,10 +9,8 @@ class UsageSync {
           '${d.month.toString().padLeft(2, '0')}-'
           '${d.day.toString().padLeft(2, '0')}';
 
-  /// Copies the last [days] days of per-app usage into the database.
-  /// Returns how many days were written. Days where Android returns nothing
-  /// (older than its retention) are left untouched, so saved history is
-  /// never overwritten with empty data.
+  /// Copies the last [days] days of per-app usage (daily and hourly) into
+  /// the database. Days where Android returns nothing are left untouched.
   static Future<int> syncRecentDays({int days = 7}) async {
     if (_running) return 0;
     _running = true;
@@ -22,9 +20,8 @@ class UsageSync {
       var written = 0;
       for (var i = 0; i < days; i++) {
         final start = DateTime(now.year, now.month, now.day - i);
-        final end = i == 0
-            ? now
-            : DateTime(now.year, now.month, now.day - i + 1);
+        final end =
+        i == 0 ? now : DateTime(now.year, now.month, now.day - i + 1);
         final apps = await UsageReader.query(start, end);
         if (apps.isEmpty) continue;
         final rows = apps
@@ -38,6 +35,27 @@ class UsageSync {
         })
             .toList();
         await ShadowDb.upsertUsageDay(dayKey(start), rows);
+
+        try {
+          final hourly = await UsageReader.queryHourly(start, end);
+          if (hourly.isNotEmpty) {
+            final hrows = <Map<String, Object?>>[];
+            for (final a in hourly) {
+              for (var h = 0; h < 24 && h < a.hours.length; h++) {
+                if (a.hours[h] > 0) {
+                  hrows.add({
+                    'hour': h,
+                    'package': a.packageName,
+                    'total_ms': a.hours[h],
+                  });
+                }
+              }
+            }
+            await ShadowDb.replaceUsageHourly(dayKey(start), hrows);
+          }
+        } catch (_) {
+          // Hourly data is optional; daily totals are already saved.
+        }
         written++;
       }
       return written;

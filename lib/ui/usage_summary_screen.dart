@@ -48,6 +48,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
   List<_Row> _rows = [];
   Map<AppCategory, int> _limits = {};
   Map<String, int> _appLimits = {};
+  List<int> _hourly = List<int>.filled(24, 0);
 
   @override
   void initState() {
@@ -121,11 +122,15 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
         appLimits[k.substring('limit_app_'.length)] = n;
       }
     });
+    final rangeFrom = UsageSync.dayKey(
+        DateTime(now.year, now.month, now.day - (_days - 1)));
+    final hourly = await ShadowDb.hourlyTotals(rangeFrom, to);
     if (mounted) {
       setState(() {
         _rows = rows;
         _limits = limits;
         _appLimits = appLimits;
+        _hourly = hourly;
       });
     }
   }
@@ -203,6 +208,58 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
     final text =
     await _promptMinutes('Daily limit: $label', _appLimits[package]);
     await _saveLimit('limit_app_$package', text);
+  }
+
+  Widget _hourChart() {
+    final maxH = _hourly.fold<int>(0, (m, v) => v > m ? v : m);
+    final totalH = _hourly.fold<int>(0, (s, v) => s + v);
+    if (totalH <= 0) return const SizedBox.shrink();
+    final late = _hourly.sublist(0, 5).fold<int>(0, (s, v) => s + v);
+    final latePct = (late * 100 / totalH).round();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Usage by hour of day',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 100,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: List.generate(24, (h) {
+                final frac = maxH == 0 ? 0.0 : _hourly[h] / maxH;
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 1),
+                    child: Container(
+                      height: 2 + 98 * frac,
+                      color: h < 5
+                          ? Colors.deepOrange
+                          : Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('12am'),
+              Text('6am'),
+              Text('12pm'),
+              Text('6pm'),
+              Text('11pm'),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text('Late night (12am–5am): ${_fmt(late)} ($latePct% of total)'),
+        ],
+      ),
+    );
   }
 
   Widget _catCard(AppCategory c, int ms, int total) {
@@ -308,6 +365,8 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
           ));
         }
       }
+      children.add(_hourChart());
+
       if (apps.isEmpty && !_loading) {
         children.add(const Padding(
           padding: EdgeInsets.all(24),

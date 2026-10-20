@@ -27,6 +27,29 @@ class AppUsage {
   );
 }
 
+class AppHourly {
+  final String packageName;
+  final String label;
+  final int category;
+  final List<int> hours;
+
+  const AppHourly({
+    required this.packageName,
+    required this.label,
+    required this.category,
+    required this.hours,
+  });
+
+  factory AppHourly.fromMap(Map<dynamic, dynamic> m) => AppHourly(
+    packageName: '${m['package']}',
+    label: '${m['label']}',
+    category: (m['category'] as num).toInt(),
+    hours: (m['hours'] as List<dynamic>)
+        .map((e) => (e as num).toInt())
+        .toList(),
+  );
+}
+
 class UsageReader {
   static const MethodChannel _ch = MethodChannel('digital_shadow/usage');
 
@@ -44,6 +67,16 @@ class UsageReader {
     });
     return (raw ?? [])
         .map((e) => AppUsage.fromMap(Map<dynamic, dynamic>.from(e as Map)))
+        .toList();
+  }
+  static Future<List<AppHourly>> queryHourly(
+      DateTime start, DateTime end) async {
+    final raw = await _ch.invokeMethod<List<dynamic>>('queryHourly', {
+      'startMs': start.millisecondsSinceEpoch,
+      'endMs': end.millisecondsSinceEpoch,
+    });
+    return (raw ?? [])
+        .map((e) => AppHourly.fromMap(Map<dynamic, dynamic>.from(e as Map)))
         .toList();
   }
 }
