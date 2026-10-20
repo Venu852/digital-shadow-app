@@ -102,6 +102,14 @@ class ShadowDb {
         'SELECT day, SUM(total_ms) AS total_ms, COUNT(*) AS apps FROM app_usage_daily GROUP BY day ORDER BY day DESC');
   }
 
+  static Future<List<Map<String, Object?>>> usageTopApps(
+      String fromDay, String toDay) async {
+    final db = await open();
+    return db.rawQuery(
+        'SELECT package, MAX(label) AS label, SUM(total_ms) AS total_ms, SUM(sessions) AS sessions, MAX(category) AS category FROM app_usage_daily WHERE day >= ? AND day <= ? GROUP BY package ORDER BY total_ms DESC',
+        [fromDay, toDay]);
+  }
+
   static Future<void> deleteAll() async {
     final db = await open();
     await db.delete('windows');
