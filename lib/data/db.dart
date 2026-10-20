@@ -10,13 +10,18 @@ class ShadowDb {
         'CREATE TABLE IF NOT EXISTS app_usage_daily(day TEXT NOT NULL, package TEXT NOT NULL, label TEXT, total_ms INTEGER NOT NULL, sessions INTEGER NOT NULL, last_used_ms INTEGER, category INTEGER, PRIMARY KEY(day, package))');
   }
 
+  static Future<void> _createSettingsTable(Database db) async {
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS settings(setting_key TEXT PRIMARY KEY, setting_value TEXT)');
+  }
+
   static Future<Database> open() async {
     final existing = _db;
     if (existing != null) return existing;
     final path = '${await getDatabasesPath()}/digital_shadow.db';
     final db = await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onConfigure: (db) async {
         try {
           await db.rawQuery('PRAGMA journal_mode=WAL');
@@ -30,9 +35,10 @@ class ShadowDb {
         await db.execute(
             'CREATE INDEX idx_windows_session ON windows(session_id)');
         await _createUsageTable(db);
+        await _createSettingsTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) await _createUsageTable(db);
+        if (oldVersion < 3) await _createSettingsTable(db);
       },
     );
     _db = db;
@@ -108,6 +114,35 @@ class ShadowDb {
     return db.rawQuery(
         'SELECT package, MAX(label) AS label, SUM(total_ms) AS total_ms, SUM(sessions) AS sessions, MAX(category) AS category FROM app_usage_daily WHERE day >= ? AND day <= ? GROUP BY package ORDER BY total_ms DESC',
         [fromDay, toDay]);
+  }
+
+  static Future<String?> getSetting(String key) async {
+    final db = await open();
+    final r = await db.query('settings',
+        where: 'setting_key = ?', whereArgs: [key], limit: 1);
+    return r.isEmpty ? null : r.first['setting_value'] as String?;
+  }
+
+  static Future<void> setSetting(String key, String value) async {
+    final db = await open();
+    await db.insert('settings', {'setting_key': key, 'setting_value': value},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  static Future<List<Map<String, Object?>>> usageRows(
+      String fromDay, String toDay) async {
+    final db = await open();
+    return db.query('app_usage_daily',
+        columns: [
+          'day',
+          'package',
+          'label',
+          'total_ms',
+          'sessions',
+          'category'
+        ],
+        where: 'day >= ? AND day <= ?',
+        whereArgs: [fromDay, toDay]);
   }
 
   static Future<void> deleteAll() async {
