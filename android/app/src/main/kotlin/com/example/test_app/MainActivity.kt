@@ -37,7 +37,6 @@ class MainActivity : FlutterActivity() {
                                 result.success(queryUsage(start, end))
                             }
                         }
-
                         "queryHourly" -> {
                             val start = call.argument<Number>("startMs")?.toLong()
                             val end = call.argument<Number>("endMs")?.toLong()
@@ -45,6 +44,15 @@ class MainActivity : FlutterActivity() {
                                 result.error("ARGS", "startMs and endMs required", null)
                             } else {
                                 result.success(queryHourly(start, end))
+                            }
+                        }
+                        "queryBehaviorHourly" -> {
+                            val start = call.argument<Number>("startMs")?.toLong()
+                            val end = call.argument<Number>("endMs")?.toLong()
+                            if (start == null || end == null) {
+                                result.error("ARGS", "startMs and endMs required", null)
+                            } else {
+                                result.success(queryBehaviorHourly(start, end))
                             }
                         }
                         else -> result.notImplemented()
@@ -151,6 +159,7 @@ class MainActivity : FlutterActivity() {
         }
         return out
     }
+
     private fun addInterval(arr: LongArray, startMs: Long, st: Long, en: Long) {
         var a = maxOf(st, startMs)
         while (a < en) {
@@ -209,8 +218,8 @@ class MainActivity : FlutterActivity() {
 
         val pm = packageManager
         val out = ArrayList<Map<String, Any>>()
-        for ((pkg, arr) in hours) {
-            if (arr.sum() <= 0L) continue
+        for ((pkg, hourArr) in hours) {
+            if (hourArr.sum() <= 0L) continue
             if (pkg == packageName) continue
             var label = ""
             var category = -1
@@ -226,10 +235,81 @@ class MainActivity : FlutterActivity() {
                     "package" to pkg,
                     "label" to label,
                     "category" to category,
-                    "hours" to arr.toList()
+                    "hours" to hourArr.toList()
                 )
             )
         }
         return out
+    }
+
+    @Suppress("DEPRECATION")
+    private fun queryBehaviorHourly(startMs: Long, endMs: Long): Map<String, Any> {
+        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val events = usm.queryEvents(startMs, endMs)
+        val e = UsageEvents.Event()
+        val pm = packageManager
+
+        val visible = HashMap<String, Boolean>()
+        fun isApp(pkg: String): Boolean = visible.getOrPut(pkg) {
+            if (pkg == packageName) {
+                false
+            } else {
+                try {
+                    pm.getApplicationInfo(pkg, 0)
+                    true
+                } catch (ex: Exception) {
+                    false
+                }
+            }
+        }
+
+        val opens = IntArray(24)
+        val switches = IntArray(24)
+        val wakeups = IntArray(24)
+        val unlocks = IntArray(24)
+        val typeCounts = HashMap<String, Int>()
+        val depth = HashMap<String, Int>()
+        var lastPkg: String? = null
+
+        while (events.hasNextEvent()) {
+            events.getNextEvent(e)
+            val type = e.eventType
+            val key = type.toString()
+            typeCounts[key] = (typeCounts[key] ?: 0) + 1
+            val idx = ((e.timeStamp - startMs) / 3_600_000L).toInt()
+            if (idx < 0 || idx > 23) continue
+            when (type) {
+                1 -> { // activity resumed / moved to foreground
+                    val pkg = e.packageName
+                    if (pkg != null && isApp(pkg)) {
+                        val d = depth[pkg] ?: 0
+                        if (d == 0) {
+                            opens[idx]++
+                            val prev = lastPkg
+                            if (prev != null && prev != pkg) switches[idx]++
+                            lastPkg = pkg
+                        }
+                        depth[pkg] = d + 1
+                    }
+                }
+                2 -> { // activity paused / moved to background
+                    val pkg = e.packageName
+                    if (pkg != null && isApp(pkg)) {
+                        val d = depth[pkg] ?: 0
+                        if (d > 0) depth[pkg] = d - 1
+                    }
+                }
+                15 -> wakeups[idx]++ // screen turned on (interactive)
+                18 -> unlocks[idx]++ // keyguard dismissed
+            }
+        }
+
+        return mapOf(
+            "opens" to opens.toList(),
+            "switches" to switches.toList(),
+            "wakeups" to wakeups.toList(),
+            "unlocks" to unlocks.toList(),
+            "typeCounts" to typeCounts
+        )
     }
 }

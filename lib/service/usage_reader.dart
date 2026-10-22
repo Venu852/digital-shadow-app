@@ -50,6 +50,39 @@ class AppHourly {
   );
 }
 
+class BehaviorHourly {
+  final List<int> opens;
+  final List<int> switches;
+  final List<int> wakeups;
+  final List<int> unlocks;
+  final Map<String, int> typeCounts;
+
+  const BehaviorHourly({
+    required this.opens,
+    required this.switches,
+    required this.wakeups,
+    required this.unlocks,
+    required this.typeCounts,
+  });
+
+  factory BehaviorHourly.fromMap(Map<dynamic, dynamic> m) {
+    List<int> ints(dynamic v) => ((v as List<dynamic>?) ?? [])
+        .map((e) => (e as num).toInt())
+        .toList();
+    final tc = <String, int>{};
+    ((m['typeCounts'] as Map<dynamic, dynamic>?) ?? {}).forEach((k, v) {
+      tc['$k'] = (v as num).toInt();
+    });
+    return BehaviorHourly(
+      opens: ints(m['opens']),
+      switches: ints(m['switches']),
+      wakeups: ints(m['wakeups']),
+      unlocks: ints(m['unlocks']),
+      typeCounts: tc,
+    );
+  }
+}
+
 class UsageReader {
   static const MethodChannel _ch = MethodChannel('digital_shadow/usage');
 
@@ -78,5 +111,14 @@ class UsageReader {
     return (raw ?? [])
         .map((e) => AppHourly.fromMap(Map<dynamic, dynamic>.from(e as Map)))
         .toList();
+  }
+  static Future<BehaviorHourly> queryBehaviorHourly(
+      DateTime start, DateTime end) async {
+    final raw = await _ch.invokeMethod<Map<dynamic, dynamic>>(
+        'queryBehaviorHourly', {
+      'startMs': start.millisecondsSinceEpoch,
+      'endMs': end.millisecondsSinceEpoch,
+    });
+    return BehaviorHourly.fromMap(raw ?? <dynamic, dynamic>{});
   }
 }

@@ -49,6 +49,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
   Map<AppCategory, int> _limits = {};
   Map<String, int> _appLimits = {};
   List<int> _hourly = List<int>.filled(24, 0);
+  Map<String, int> _behavior = {};
   int? _selHour;
 
   @override
@@ -126,12 +127,14 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
     final rangeFrom = UsageSync.dayKey(
         DateTime(now.year, now.month, now.day - (_days - 1)));
     final hourly = await ShadowDb.hourlyTotals(rangeFrom, to);
+    final behavior = await ShadowDb.behaviorTotals(rangeFrom, to);
     if (mounted) {
       setState(() {
         _rows = rows;
         _limits = limits;
         _appLimits = appLimits;
         _hourly = hourly;
+        _behavior = behavior;
       });
     }
   }
@@ -285,6 +288,57 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
     );
   }
 
+  Widget _behaviorCard() {
+    final b = _behavior;
+    final days = b['days'] ?? 0;
+    if (days == 0) return const SizedBox.shrink();
+    String v(String key) {
+      final n = b[key] ?? 0;
+      return _days == 1 ? '$n' : (n / days).toStringAsFixed(1);
+    }
+
+    final perDay = _days == 1 ? '' : ' (per day, average of $days days)';
+    final noUnlock = (b['unlocks'] ?? 0) == 0 && (b['wakeups'] ?? 0) > 0;
+    final events = UsageSync.lastTypeCounts.entries.toList()
+      ..sort((a, c) =>
+          (int.tryParse(a.key) ?? 0).compareTo(int.tryParse(c.key) ?? 0));
+    final eventText = events.map((e) => '${e.key}×${e.value}').join(', ');
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Behaviour$perDay',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text('Phone unlocks: ${v('unlocks')}'),
+            Text('Screen wake-ups: ${v('wakeups')}'),
+            Text('App opens: ${v('opens')}'),
+            Text('App switches: ${v('switches')}'),
+            Text('Distinct apps used: ${b['apps'] ?? 0}'),
+            if (noUnlock)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text(
+                  'This phone did not report unlock events, so screen '
+                      'wake-ups are the best signal.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
+            if (eventText.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('Event types reported today: $eventText',
+                    style: const TextStyle(fontSize: 11)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _catCard(AppCategory c, int ms, int total) {
     final limit = _limits[c];
     final usual = _days == 1 ? _usual(c) : null;
@@ -389,6 +443,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
         }
       }
       children.add(_hourChart());
+      children.add(_behaviorCard());
 
       if (apps.isEmpty && !_loading) {
         children.add(const Padding(

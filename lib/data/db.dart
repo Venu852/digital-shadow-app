@@ -20,13 +20,18 @@ class ShadowDb {
         'CREATE TABLE IF NOT EXISTS app_usage_hourly(day TEXT NOT NULL, hour INTEGER NOT NULL, package TEXT NOT NULL, total_ms INTEGER NOT NULL, PRIMARY KEY(day, hour, package))');
   }
 
+  static Future<void> _createBehaviorTable(Database db) async {
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS usage_behavior_hourly(day TEXT NOT NULL, hour INTEGER NOT NULL, opens INTEGER NOT NULL, switches INTEGER NOT NULL, wakeups INTEGER NOT NULL, unlocks INTEGER NOT NULL, PRIMARY KEY(day, hour))');
+  }
+
   static Future<Database> open() async {
     final existing = _db;
     if (existing != null) return existing;
     final path = '${await getDatabasesPath()}/digital_shadow.db';
     final db = await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onConfigure: (db) async {
         try {
           await db.rawQuery('PRAGMA journal_mode=WAL');
@@ -42,10 +47,12 @@ class ShadowDb {
         await _createUsageTable(db);
         await _createSettingsTable(db);
         await _createHourlyTable(db);
+        await _createBehaviorTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 3) await _createSettingsTable(db);
         if (oldVersion < 4) await _createHourlyTable(db);
+        if (oldVersion < 5) await _createBehaviorTable(db);
       },
     );
     _db = db;
@@ -193,11 +200,47 @@ class ShadowDb {
     return out;
   }
 
+  static Future<void> replaceBehaviorDay(
+      String day, List<Map<String, Object?>> rows) async {
+    final db = await open();
+    await db.transaction((txn) async {
+      await txn.delete('usage_behavior_hourly',
+          where: 'day = ?', whereArgs: [day]);
+      final batch = txn.batch();
+      for (final r in rows) {
+        batch.insert('usage_behavior_hourly', {...r, 'day': day});
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  static Future<Map<String, int>> behaviorTotals(
+      String fromDay, String toDay) async {
+    final db = await open();
+    final r = await db.rawQuery(
+        'SELECT COALESCE(SUM(opens),0) AS opens, COALESCE(SUM(switches),0) AS switches, COALESCE(SUM(wakeups),0) AS wakeups, COALESCE(SUM(unlocks),0) AS unlocks, COUNT(DISTINCT day) AS days FROM usage_behavior_hourly WHERE day >= ? AND day <= ?',
+        [fromDay, toDay]);
+    final a = await db.rawQuery(
+        'SELECT COUNT(DISTINCT package) AS apps FROM app_usage_hourly WHERE day >= ? AND day <= ? AND total_ms > 0',
+        [fromDay, toDay]);
+    int g(Map<String, Object?> m, String k) => ((m[k] as num?) ?? 0).toInt();
+    final row = r.first;
+    return {
+      'opens': g(row, 'opens'),
+      'switches': g(row, 'switches'),
+      'wakeups': g(row, 'wakeups'),
+      'unlocks': g(row, 'unlocks'),
+      'days': g(row, 'days'),
+      'apps': g(a.first, 'apps'),
+    };
+  }
+
   static Future<void> deleteAll() async {
     final db = await open();
     await db.delete('windows');
     await db.delete('sessions');
     await db.delete('app_usage_daily');
     await db.delete('app_usage_hourly');
+    await db.delete('usage_behavior_hourly');
   }
 }

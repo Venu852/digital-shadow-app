@@ -4,13 +4,17 @@ import 'package:test_app/service/usage_reader.dart';
 class UsageSync {
   static bool _running = false;
 
+  /// Event types the phone reported for today, kept for the diagnostics line.
+  static Map<String, int> lastTypeCounts = {};
+
   static String dayKey(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-'
           '${d.month.toString().padLeft(2, '0')}-'
           '${d.day.toString().padLeft(2, '0')}';
 
-  /// Copies the last [days] days of per-app usage (daily and hourly) into
-  /// the database. Days where Android returns nothing are left untouched.
+  /// Copies the last [days] days of usage (daily, hourly and behaviour
+  /// counts) into the database. Days where Android returns nothing are left
+  /// untouched, so saved history is never overwritten with empty data.
   static Future<int> syncRecentDays({int days = 7}) async {
     if (_running) return 0;
     _running = true;
@@ -55,6 +59,32 @@ class UsageSync {
           }
         } catch (_) {
           // Hourly data is optional; daily totals are already saved.
+        }
+
+        try {
+          final b = await UsageReader.queryBehaviorHourly(start, end);
+          final brows = <Map<String, Object?>>[];
+          for (var h = 0; h < 24; h++) {
+            final o = h < b.opens.length ? b.opens[h] : 0;
+            final s = h < b.switches.length ? b.switches[h] : 0;
+            final w = h < b.wakeups.length ? b.wakeups[h] : 0;
+            final u = h < b.unlocks.length ? b.unlocks[h] : 0;
+            if (o + s + w + u > 0) {
+              brows.add({
+                'hour': h,
+                'opens': o,
+                'switches': s,
+                'wakeups': w,
+                'unlocks': u,
+              });
+            }
+          }
+          if (brows.isNotEmpty) {
+            await ShadowDb.replaceBehaviorDay(dayKey(start), brows);
+          }
+          if (i == 0) lastTypeCounts = b.typeCounts;
+        } catch (_) {
+          // Behaviour data is optional.
         }
         written++;
       }
