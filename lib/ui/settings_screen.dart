@@ -17,6 +17,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   int _retention = 30;
   int _windows = 0;
   int _usageDays = 0;
+  bool _autoRestart = false;
 
   @override
   void initState() {
@@ -43,12 +44,14 @@ class _SettingsScreenState extends State<SettingsScreen>
           int.tryParse(await ShadowDb.getSetting('retention_days') ?? '') ?? 30;
       final w = await ShadowDb.countWindows();
       final d = (await ShadowDb.usageDaySummaries()).length;
+      final ar = (await ShadowDb.getSetting('auto_restart')) == '1';
       if (mounted) {
         setState(() {
           _usageAccess = access;
           _retention = r;
           _windows = w;
           _usageDays = d;
+          _autoRestart = ar;
         });
       }
     } catch (_) {
@@ -131,6 +134,19 @@ class _SettingsScreenState extends State<SettingsScreen>
             subtitle: const Text('Needed for the "session active" notice'),
             trailing: const Icon(Icons.open_in_new),
             onTap: () => UsageReader.openNotificationSettings(),
+          ),
+          _section('Session'),
+          SwitchListTile(
+            title: const Text('Restart session after phone reboot'),
+            subtitle: const Text(
+                'Off by default. Takes effect the next time you start a '
+                    'session. Some phones also need "Auto launch" allowed for '
+                    'this app.'),
+            value: _autoRestart,
+            onChanged: (v) async {
+              await ShadowDb.setSetting('auto_restart', v ? '1' : '0');
+              if (mounted) setState(() => _autoRestart = v);
+            },
           ),
           _section('Stored data'),
           ListTile(

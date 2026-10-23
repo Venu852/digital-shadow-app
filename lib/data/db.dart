@@ -22,7 +22,7 @@ class ShadowDb {
 
   static Future<void> _createBehaviorTable(Database db) async {
     await db.execute(
-        'CREATE TABLE IF NOT EXISTS usage_behavior_hourly(day TEXT NOT NULL, hour INTEGER NOT NULL, opens INTEGER NOT NULL, switches INTEGER NOT NULL, wakeups INTEGER NOT NULL, unlocks INTEGER NOT NULL, screen_ms INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(day, hour))');
+        'CREATE TABLE IF NOT EXISTS usage_behavior_hourly(day TEXT NOT NULL, hour INTEGER NOT NULL, opens INTEGER NOT NULL, switches INTEGER NOT NULL, wakeups INTEGER NOT NULL, unlocks INTEGER NOT NULL, screen_ms INTEGER NOT NULL DEFAULT 0, notifications INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(day, hour))');
   }
 
   static Future<Database> open() async {
@@ -31,7 +31,7 @@ class ShadowDb {
     final path = '${await getDatabasesPath()}/digital_shadow.db';
     final db = await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onConfigure: (db) async {
         try {
           await db.rawQuery('PRAGMA journal_mode=WAL');
@@ -57,6 +57,14 @@ class ShadowDb {
           try {
             await db.execute(
                 'ALTER TABLE usage_behavior_hourly ADD COLUMN screen_ms INTEGER NOT NULL DEFAULT 0');
+          } catch (_) {
+            // Column already exists (table was just created with it).
+          }
+        }
+        if (oldVersion < 7) {
+          try {
+            await db.execute(
+                'ALTER TABLE usage_behavior_hourly ADD COLUMN notifications INTEGER NOT NULL DEFAULT 0');
           } catch (_) {
             // Column already exists (table was just created with it).
           }
@@ -229,7 +237,7 @@ class ShadowDb {
       String fromDay, String toDay) async {
     final db = await open();
     final r = await db.rawQuery(
-        'SELECT COALESCE(SUM(opens),0) AS opens, COALESCE(SUM(switches),0) AS switches, COALESCE(SUM(wakeups),0) AS wakeups, COALESCE(SUM(unlocks),0) AS unlocks, COALESCE(SUM(screen_ms),0) AS screen_ms, COUNT(DISTINCT day) AS days FROM usage_behavior_hourly WHERE day >= ? AND day <= ?',
+        'SELECT COALESCE(SUM(opens),0) AS opens, COALESCE(SUM(switches),0) AS switches, COALESCE(SUM(wakeups),0) AS wakeups, COALESCE(SUM(unlocks),0) AS unlocks, COALESCE(SUM(screen_ms),0) AS screen_ms, COALESCE(SUM(notifications),0) AS notifications, COUNT(DISTINCT day) AS days FROM usage_behavior_hourly WHERE day >= ? AND day <= ?',
         [fromDay, toDay]);
     final a = await db.rawQuery(
         'SELECT COUNT(DISTINCT package) AS apps FROM app_usage_hourly WHERE day >= ? AND day <= ? AND total_ms > 0',
@@ -242,6 +250,7 @@ class ShadowDb {
       'wakeups': g(row, 'wakeups'),
       'unlocks': g(row, 'unlocks'),
       'screen_ms': g(row, 'screen_ms'),
+      'notifications': g(row, 'notifications'),
       'days': g(row, 'days'),
       'apps': g(a.first, 'apps'),
     };

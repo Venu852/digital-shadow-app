@@ -313,6 +313,8 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
         return 'Screen time';
       case 'screenMin':
         return 'Screen on';
+      case 'notifs':
+        return 'Notifications seen';
       default:
         return f;
     }
@@ -351,7 +353,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
         lines.add(const Text(
             'Predicted for today (so far + your usual for the rest of the day)',
             style: TextStyle(fontWeight: FontWeight.w600)));
-        for (final f in const ['pickups', 'opens', 'fgMin', 'screenMin']) {
+        for (final f in const ['pickups', 'opens', 'fgMin', 'screenMin', 'notifs']) {
           final fc = ins.forecasts[f];
           if (fc == null) continue;
           lines.add(Text('${_featLabel(f, ins.unlocksReported)}: '
@@ -428,6 +430,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
             Text('Screen on time: ${_fmt(screenShown)}'),
             Text('App opens: ${v('opens')}'),
             Text('App switches: ${v('switches')}'),
+            Text('Notifications seen: ${v('notifications')}'),
             Text('Distinct apps used: ${b['apps'] ?? 0}'),
             if (noUnlock)
               const Padding(

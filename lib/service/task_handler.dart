@@ -63,6 +63,22 @@ class ShadowTaskHandler extends TaskHandler {
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     debugPrint('ShadowTask started $timestamp');
+    try {
+      final consent = await ShadowDb.getSetting('consent_v1');
+      final auto = (await ShadowDb.getSetting('auto_restart')) == '1';
+      final lastManual =
+          int.tryParse(await ShadowDb.getSetting('last_manual_start') ?? '') ??
+              0;
+      final fromUi =
+          DateTime.now().millisecondsSinceEpoch - lastManual < 30000;
+      if (consent == null || consent.isEmpty || (!fromUi && !auto)) {
+        debugPrint('Service started without consent or opt-in; stopping');
+        await FlutterForegroundTask.stopService();
+        return;
+      }
+    } catch (e) {
+      debugPrint('WARN start guard: $e');
+    }
     _batteryStart = await _readBatteryLevel();
     _agg.start(timestamp);
 

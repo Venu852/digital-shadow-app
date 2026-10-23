@@ -114,19 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     FlutterForegroundTask.addTaskDataCallback(_onData);
-    FlutterForegroundTask.init(
-      androidNotificationOptions: AndroidNotificationOptions(
-        channelId: 'digital_shadow',
-        channelName: 'Digital Shadow session',
-        channelImportance: NotificationChannelImportance.LOW,
-        priority: NotificationPriority.LOW,
-      ),
-      iosNotificationOptions: const IOSNotificationOptions(),
-      foregroundTaskOptions: ForegroundTaskOptions(
-        eventAction: ForegroundTaskEventAction.repeat(30000),
-        allowWakeLock: true,
-      ),
-    );
+    _initService();
     FlutterForegroundTask.isRunningService.then((v) {
       if (mounted) setState(() => _running = v);
     });
@@ -178,9 +166,39 @@ class _HomeScreenState extends State<HomeScreen> {
     return true;
   }
 
+  Future<void> _initService() async {
+    var autoRestart = false;
+    try {
+      autoRestart = (await ShadowDb.getSetting('auto_restart')) == '1';
+    } catch (_) {
+      // Default to off.
+    }
+    FlutterForegroundTask.init(
+      androidNotificationOptions: AndroidNotificationOptions(
+        channelId: 'digital_shadow',
+        channelName: 'Digital Shadow session',
+        channelImportance: NotificationChannelImportance.LOW,
+        priority: NotificationPriority.LOW,
+      ),
+      iosNotificationOptions: const IOSNotificationOptions(),
+      foregroundTaskOptions: ForegroundTaskOptions(
+        eventAction: ForegroundTaskEventAction.repeat(30000),
+        allowWakeLock: true,
+        autoRunOnBoot: autoRestart,
+      ),
+    );
+  }
+
   Future<void> _start() async {
     if (!await _maybeBatteryHint()) return;
     await FlutterForegroundTask.requestNotificationPermission();
+    await _initService();
+    try {
+      await ShadowDb.setSetting(
+          'last_manual_start', '${DateTime.now().millisecondsSinceEpoch}');
+    } catch (_) {
+      // Not critical.
+    }
     await FlutterForegroundTask.startService(
       serviceId: 256,
       notificationTitle: 'Digital Shadow session active',

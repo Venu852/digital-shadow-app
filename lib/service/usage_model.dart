@@ -6,7 +6,8 @@ const List<String> kFeatures = [
   'switches',
   'apps',
   'fgMin',
-  'screenMin'
+  'screenMin',
+  'notifs'
 ];
 
 /// Smallest deviation unit per feature, so a perfectly regular baseline
@@ -18,6 +19,7 @@ const Map<String, double> kMinStd = {
   'apps': 1.0,
   'fgMin': 3.0,
   'screenMin': 3.0,
+  'notifs': 2.0,
 };
 
 const int kMinBaselineDays = 3;
@@ -153,6 +155,7 @@ UsageInsights analyzeUsage({
     'apps': 0.0,
     'fgMin': 0.0,
     'screenMin': 0.0,
+    'notifs': 0.0,
   };
 
   var totalUnlocks = 0.0;
@@ -176,6 +179,7 @@ UsageInsights analyzeUsage({
     c['opens'] = num0(r['opens']);
     c['switches'] = num0(r['switches']);
     c['screenMin'] = num0(r['screen_ms']) / 60000.0;
+    c['notifs'] = num0(r['notifications']);
   }
   for (final r in fgRows) {
     final h = num0(r['hour']).toInt();
@@ -242,7 +246,7 @@ UsageInsights analyzeUsage({
     if (flagsWeek.length > 12) flagsWeek.removeRange(12, flagsWeek.length);
 
     final cur = now.hour;
-    for (final f in const ['pickups', 'opens', 'fgMin', 'screenMin']) {
+    for (final f in const ['pickups', 'opens', 'fgMin', 'screenMin', 'notifs']) {
       var actual = 0.0;
       for (final s in todays) {
         if (s.hour <= cur) actual += s.f[f] ?? 0.0;

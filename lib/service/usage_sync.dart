@@ -118,7 +118,8 @@ class UsageSync {
             final w = h < b.wakeups.length ? b.wakeups[h] : 0;
             final u = h < b.unlocks.length ? b.unlocks[h] : 0;
             final sc = screenHours[h];
-            if (o + s + w + u + sc > 0) {
+            final nt = h < b.notifications.length ? b.notifications[h] : 0;
+            if (o + s + w + u + sc + nt > 0) {
               brows.add({
                 'hour': h,
                 'opens': o,
@@ -126,6 +127,7 @@ class UsageSync {
                 'wakeups': w,
                 'unlocks': u,
                 'screen_ms': sc,
+                'notifications': nt,
               });
             }
           }

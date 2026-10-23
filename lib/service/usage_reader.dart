@@ -55,6 +55,7 @@ class BehaviorHourly {
   final List<int> switches;
   final List<int> wakeups;
   final List<int> unlocks;
+  final List<int> notifications;
   final Map<String, int> typeCounts;
 
   const BehaviorHourly({
@@ -62,6 +63,7 @@ class BehaviorHourly {
     required this.switches,
     required this.wakeups,
     required this.unlocks,
+    required this.notifications,
     required this.typeCounts,
   });
 
@@ -78,6 +80,7 @@ class BehaviorHourly {
       switches: ints(m['switches']),
       wakeups: ints(m['wakeups']),
       unlocks: ints(m['unlocks']),
+      notifications: ints(m['notifications']),
       typeCounts: tc,
     );
   }

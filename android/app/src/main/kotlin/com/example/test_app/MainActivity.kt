@@ -357,6 +357,7 @@ class MainActivity : FlutterActivity() {
         val switches = IntArray(24)
         val wakeups = IntArray(24)
         val unlocks = IntArray(24)
+        val notifications = IntArray(24)
         val typeCounts = HashMap<String, Int>()
         val depth = HashMap<String, Int>()
         val lastBg = HashMap<String, Long>()
@@ -402,6 +403,10 @@ class MainActivity : FlutterActivity() {
                 }
                 15 -> wakeups[idx]++ // screen turned on (interactive)
                 18 -> unlocks[idx]++ // keyguard dismissed
+                10 -> { // notification seen
+                    val pkg = e.packageName
+                    if (pkg != null && isApp(pkg)) notifications[idx]++
+                }
             }
         }
 
@@ -410,6 +415,7 @@ class MainActivity : FlutterActivity() {
             "switches" to switches.toList(),
             "wakeups" to wakeups.toList(),
             "unlocks" to unlocks.toList(),
+            "notifications" to notifications.toList(),
             "typeCounts" to typeCounts
         )
     }
