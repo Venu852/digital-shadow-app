@@ -235,6 +235,21 @@ class ShadowDb {
     };
   }
 
+  static Future<List<Map<String, Object?>>> behaviorRows(
+      String fromDay, String toDay) async {
+    final db = await open();
+    return db.query('usage_behavior_hourly',
+        where: 'day >= ? AND day <= ?', whereArgs: [fromDay, toDay]);
+  }
+
+  static Future<List<Map<String, Object?>>> hourlyForeground(
+      String fromDay, String toDay) async {
+    final db = await open();
+    return db.rawQuery(
+        'SELECT day, hour, SUM(total_ms) AS ms, COUNT(DISTINCT package) AS apps FROM app_usage_hourly WHERE day >= ? AND day <= ? AND total_ms > 0 GROUP BY day, hour',
+        [fromDay, toDay]);
+  }
+
   static Future<void> deleteAll() async {
     final db = await open();
     await db.delete('windows');

@@ -90,6 +90,7 @@ class MainActivity : FlutterActivity() {
         val total = HashMap<String, Long>()
         val sessions = HashMap<String, Int>()
         val lastUsed = HashMap<String, Long>()
+        val lastBg = HashMap<String, Long>()
 
         while (events.hasNextEvent()) {
             events.getNextEvent(e)
@@ -100,7 +101,13 @@ class MainActivity : FlutterActivity() {
                     val d = depth[pkg] ?: 0
                     if (d == 0) {
                         openAt[pkg] = ts
-                        sessions[pkg] = (sessions[pkg] ?: 0) + 1
+                        // Moving between screens of the same app leaves the
+                        // foreground for a moment, so only count a new session
+                        // if the app was away for more than 2 seconds.
+                        val bg = lastBg[pkg]
+                        if (bg == null || ts - bg > 2000L) {
+                            sessions[pkg] = (sessions[pkg] ?: 0) + 1
+                        }
                     }
                     depth[pkg] = d + 1
                     seen.add(pkg)
@@ -116,6 +123,7 @@ class MainActivity : FlutterActivity() {
                     } else {
                         depth[pkg] = d - 1
                         if (d - 1 == 0) {
+                            lastBg[pkg] = ts
                             val st = openAt.remove(pkg)
                             if (st != null) total[pkg] = (total[pkg] ?: 0L) + (ts - st)
                         }
@@ -269,6 +277,7 @@ class MainActivity : FlutterActivity() {
         val unlocks = IntArray(24)
         val typeCounts = HashMap<String, Int>()
         val depth = HashMap<String, Int>()
+        val lastBg = HashMap<String, Long>()
         var lastPkg: String? = null
 
         while (events.hasNextEvent()) {
@@ -284,9 +293,16 @@ class MainActivity : FlutterActivity() {
                     if (pkg != null && isApp(pkg)) {
                         val d = depth[pkg] ?: 0
                         if (d == 0) {
-                            opens[idx]++
-                            val prev = lastPkg
-                            if (prev != null && prev != pkg) switches[idx]++
+                            // Moving between screens of the same app leaves the
+                            // foreground for a moment. Only count a new open if
+                            // the app was away for more than 2 seconds.
+                            val bg = lastBg[pkg]
+                            val isNewOpen = bg == null || e.timeStamp - bg > 2000L
+                            if (isNewOpen) {
+                                opens[idx]++
+                                val prev = lastPkg
+                                if (prev != null && prev != pkg) switches[idx]++
+                            }
                             lastPkg = pkg
                         }
                         depth[pkg] = d + 1
@@ -296,7 +312,10 @@ class MainActivity : FlutterActivity() {
                     val pkg = e.packageName
                     if (pkg != null && isApp(pkg)) {
                         val d = depth[pkg] ?: 0
-                        if (d > 0) depth[pkg] = d - 1
+                        if (d > 0) {
+                            depth[pkg] = d - 1
+                            if (d - 1 == 0) lastBg[pkg] = e.timeStamp
+                        }
                     }
                 }
                 15 -> wakeups[idx]++ // screen turned on (interactive)

@@ -3,6 +3,7 @@ import 'package:test_app/data/db.dart';
 import 'package:test_app/service/app_categories.dart';
 import 'package:test_app/service/usage_reader.dart';
 import 'package:test_app/service/usage_sync.dart';
+import 'package:test_app/service/usage_model.dart';
 
 const String _ownPackage = 'com.example.test_app';
 
@@ -50,6 +51,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
   Map<String, int> _appLimits = {};
   List<int> _hourly = List<int>.filled(24, 0);
   Map<String, int> _behavior = {};
+  UsageInsights? _insights;
   int? _selHour;
 
   @override
@@ -128,6 +130,14 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
         DateTime(now.year, now.month, now.day - (_days - 1)));
     final hourly = await ShadowDb.hourlyTotals(rangeFrom, to);
     final behavior = await ShadowDb.behaviorTotals(rangeFrom, to);
+    final behRows = await ShadowDb.behaviorRows(from, to);
+    final fgRows = await ShadowDb.hourlyForeground(from, to);
+    final insights = analyzeUsage(
+      behaviorRows: behRows,
+      fgRows: fgRows,
+      now: now,
+      todayKey: to,
+    );
     if (mounted) {
       setState(() {
         _rows = rows;
@@ -135,6 +145,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
         _appLimits = appLimits;
         _hourly = hourly;
         _behavior = behavior;
+        _insights = insights;
       });
     }
   }
@@ -284,6 +295,101 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
           Text('Late night (12am–5am, orange bars): ${_fmt(late)} '
               '($latePct% of total)'),
         ],
+      ),
+    );
+  }
+
+  String _featLabel(String f, bool unlocks) {
+    switch (f) {
+      case 'pickups':
+        return unlocks ? 'Unlocks' : 'Screen wake-ups';
+      case 'opens':
+        return 'App opens';
+      case 'switches':
+        return 'App switches';
+      case 'apps':
+        return 'Distinct apps';
+      case 'fgMin':
+        return 'Screen time';
+      default:
+        return f;
+    }
+  }
+
+  String _featVal(String f, double v) {
+    if (f == 'fgMin') return _fmt((v * 60000).round());
+    return v.round().toString();
+  }
+
+  String _featExp(String f, double v) {
+    if (f == 'fgMin') return _fmt((v * 60000).round());
+    return v.toStringAsFixed(1);
+  }
+
+  Widget _insightsCard() {
+    final ins = _insights;
+    if (ins == null || ins.dataDays == 0) return const SizedBox.shrink();
+    final lines = <Widget>[
+      const Text('Insights (on-device model)',
+          style: TextStyle(fontWeight: FontWeight.bold)),
+      const SizedBox(height: 8),
+    ];
+    if (!ins.ready) {
+      lines.add(Text('Learning your usual patterns: ${ins.baselineDays} of '
+          '$kMinBaselineDays earlier days available. Keep using the phone '
+          'normally.'));
+    } else {
+      lines.add(Text(
+        'Compared with your usual hours from ${ins.baselineDays} earlier '
+            'days, split into night, morning, afternoon and evening.',
+        style: const TextStyle(fontSize: 12),
+      ));
+      if (_days == 1) {
+        lines.add(const SizedBox(height: 8));
+        lines.add(const Text(
+            'Predicted for today (so far + your usual for the rest of the day)',
+            style: TextStyle(fontWeight: FontWeight.w600)));
+        for (final f in const ['pickups', 'opens', 'fgMin']) {
+          final fc = ins.forecasts[f];
+          if (fc == null) continue;
+          lines.add(Text('${_featLabel(f, ins.unlocksReported)}: '
+              '${_featVal(f, fc.total)} (usual day '
+              '${_featVal(f, fc.usualTotal)}, so far '
+              '${_featVal(f, fc.actualSoFar)})'));
+        }
+      }
+      lines.add(const SizedBox(height: 8));
+      final flags = _days == 1 ? ins.flagsToday : ins.flagsWeek;
+      lines.add(Text(
+          _days == 1 ? 'Unusual hours today' : 'Unusual hours this week',
+          style: const TextStyle(fontWeight: FontWeight.w600)));
+      if (flags.isEmpty) {
+        lines.add(Text(_days == 1 ? 'None so far today.' : 'None this week.'));
+      } else {
+        for (final fl in flags.take(6)) {
+          final day = _days == 1 ? '' : '${fl.sample.day.substring(5)}  ';
+          lines.add(Text('$day${_hourRange(fl.sample.hour)}: '
+              '${_featLabel(fl.topFeature, ins.unlocksReported)} '
+              '${_featVal(fl.topFeature, fl.sample.f[fl.topFeature] ?? 0)} '
+              '(usual ~${_featExp(fl.topFeature, fl.expected)}), '
+              'unusually ${fl.topZ > 0 ? 'high' : 'low'}'));
+        }
+      }
+    }
+    lines.add(const SizedBox(height: 6));
+    lines.add(const Text(
+      'A statistical comparison with your own habits, not training. '
+          'Unusual does not mean harmful.',
+      style: TextStyle(fontSize: 11),
+    ));
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: lines,
+        ),
       ),
     );
   }
@@ -444,6 +550,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
       }
       children.add(_hourChart());
       children.add(_behaviorCard());
+      children.add(_insightsCard());
 
       if (apps.isEmpty && !_loading) {
         children.add(const Padding(
