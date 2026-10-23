@@ -78,6 +78,29 @@ class MainActivity : FlutterActivity() {
         return mode == AppOpsManager.MODE_ALLOWED
     }
 
+    private var homePackagesCache: Set<String>? = null
+
+    @Suppress("DEPRECATION")
+    private fun homePackages(): Set<String> {
+        homePackagesCache?.let { return it }
+        val out = HashSet<String>()
+        try {
+            val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            for (ri in packageManager.queryIntentActivities(home, 0)) {
+                ri.activityInfo?.packageName?.let { out.add(it) }
+            }
+            packageManager.resolveActivity(home, 0)?.activityInfo?.packageName
+                ?.let { out.add(it) }
+        } catch (e: Exception) {
+            // Fall back to the name check below.
+        }
+        homePackagesCache = out
+        return out
+    }
+
+    private fun isHomeApp(pkg: String): Boolean =
+        homePackages().contains(pkg) || pkg.contains("launcher", ignoreCase = true)
+
     @Suppress("DEPRECATION")
     private fun queryUsage(startMs: Long, endMs: Long): List<Map<String, Any>> {
         val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
@@ -144,7 +167,7 @@ class MainActivity : FlutterActivity() {
         val pm = packageManager
         val out = ArrayList<Map<String, Any>>()
         for ((pkg, ms) in total) {
-            if (ms <= 0L) continue
+            if (ms <= 0L || isHomeApp(pkg)) continue
             var label = pkg
             var category = -1
             try {
@@ -228,7 +251,7 @@ class MainActivity : FlutterActivity() {
         val out = ArrayList<Map<String, Any>>()
         for ((pkg, hourArr) in hours) {
             if (hourArr.sum() <= 0L) continue
-            if (pkg == packageName) continue
+            if (pkg == packageName || isHomeApp(pkg)) continue
             var label = ""
             var category = -1
             try {
@@ -259,7 +282,7 @@ class MainActivity : FlutterActivity() {
 
         val visible = HashMap<String, Boolean>()
         fun isApp(pkg: String): Boolean = visible.getOrPut(pkg) {
-            if (pkg == packageName) {
+            if (pkg == packageName || isHomeApp(pkg)) {
                 false
             } else {
                 try {

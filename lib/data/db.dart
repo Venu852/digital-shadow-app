@@ -102,12 +102,15 @@ class ShadowDb {
   static Future<void> upsertUsageDay(
       String day, List<Map<String, Object?>> rows) async {
     final db = await open();
-    final batch = db.batch();
-    for (final r in rows) {
-      batch.insert('app_usage_daily', {...r, 'day': day},
-          conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    await batch.commit(noResult: true);
+    await db.transaction((txn) async {
+      await txn.delete('app_usage_daily', where: 'day = ?', whereArgs: [day]);
+      final batch = txn.batch();
+      for (final r in rows) {
+        batch.insert('app_usage_daily', {...r, 'day': day},
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   static Future<List<Map<String, Object?>>> usageForDay(String day) async {
