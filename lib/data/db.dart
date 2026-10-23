@@ -257,5 +257,7 @@ class ShadowDb {
     await db.delete('app_usage_daily');
     await db.delete('app_usage_hourly');
     await db.delete('usage_behavior_hourly');
+    await db.delete('settings',
+        where: 'setting_key = ?', whereArgs: ['motion_baseline']);
   }
 }

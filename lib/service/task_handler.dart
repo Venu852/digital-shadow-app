@@ -6,9 +6,9 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:sensors_plus/sensors_plus.dart';
-import 'package:test_app/service/window_aggregator.dart';
 import 'package:test_app/data/db.dart';
-
+import 'package:test_app/service/anomaly_model.dart';
+import 'package:test_app/service/window_aggregator.dart';
 
 @pragma('vm:entry-point')
 void startCallback() {
@@ -25,6 +25,7 @@ class ShadowTaskHandler extends TaskHandler {
   int? _batteryStart;
   int _windowCount = 0;
   int? _sessionId;
+  AnomalyModel _model = AnomalyModel();
 
   Future<int?> _readBatteryLevel() async {
     try {
@@ -64,12 +65,23 @@ class ShadowTaskHandler extends TaskHandler {
     debugPrint('ShadowTask started $timestamp');
     _batteryStart = await _readBatteryLevel();
     _agg.start(timestamp);
+
     try {
       await ShadowDb.purgeOlderThan(30);
       _sessionId = await ShadowDb.startSession(timestamp);
     } catch (e) {
       debugPrint('WARN db start: $e');
     }
+
+    try {
+      final saved = await ShadowDb.getSetting('motion_baseline');
+      if (saved != null && saved.isNotEmpty) {
+        _model = AnomalyModel.fromJsonString(saved);
+      }
+    } catch (e) {
+      debugPrint('WARN baseline load: $e');
+    }
+
     try {
       _accelSub = accelerometerEventStream(
         samplingPeriod: const Duration(milliseconds: 50),
@@ -118,11 +130,32 @@ class ShadowTaskHandler extends TaskHandler {
       );
       _batteryStart = batteryEnd;
       _windowCount++;
+
+      ScoreResult? result;
       try {
-        await ShadowDb.insertWindow(_sessionId, summary);
+        result = _model.process(summary);
+        summary['score'] = result.score;
+        summary['is_anomaly'] = result.isAnomaly;
+        summary['calibrating'] = result.calibrating;
+        summary['windows_seen'] = result.windowsSeen;
+      } catch (e) {
+        debugPrint('WARN model: $e');
+      }
+
+      try {
+        await ShadowDb.insertWindow(_sessionId, summary,
+            score: result?.score,
+            isAnomaly: result?.score == null ? null : result!.isAnomaly);
       } catch (e) {
         debugPrint('WARN db insert: $e');
       }
+
+      try {
+        await ShadowDb.setSetting('motion_baseline', _model.toJsonString());
+      } catch (e) {
+        debugPrint('WARN baseline save: $e');
+      }
+
       debugPrint('WINDOW ${jsonEncode(summary)}');
       FlutterForegroundTask.sendDataToMain({'window': summary});
       try {

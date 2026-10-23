@@ -35,6 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _gyroMean = '-';
   String _accelCount = '-';
   int _stored = 0;
+  String _modelStatus = 'Model: waiting for first window';
 
   String _fmt(Object? v) => v is num ? v.toStringAsFixed(3) : '-';
 
@@ -59,6 +60,18 @@ class _HomeScreenState extends State<HomeScreen> {
         _accelMean = _fmt(w['accel_mag_mean']);
         _gyroMean = _fmt(w['gyro_mag_mean']);
         _accelCount = '${w['sample_count_accel'] ?? '-'}';
+        final calib = w['calibrating'] == true;
+        final seen = w['windows_seen'] ?? 0;
+        final score = w['score'];
+        if (calib) {
+          _modelStatus = 'Model: on-device, calibrating $seen/20';
+        } else if (score is num) {
+          _modelStatus =
+          'Model: on-device, anomaly score ${score.toStringAsFixed(2)}'
+              '${w['is_anomaly'] == true ? ' (ANOMALY)' : ''}';
+        } else {
+          _modelStatus = 'Model: on-device, no score';
+        }
       });
       _refreshStored();
     }
@@ -135,6 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Text('Gyro magnitude mean: $_gyroMean'),
                     Text('Accel samples (last window): $_accelCount'),
                     Text('Stored windows on device: $_stored'),
+                    Text(_modelStatus),
                   ],
                 ),
               ),
