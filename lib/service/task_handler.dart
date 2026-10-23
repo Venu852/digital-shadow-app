@@ -67,7 +67,9 @@ class ShadowTaskHandler extends TaskHandler {
     _agg.start(timestamp);
 
     try {
-      await ShadowDb.purgeOlderThan(30);
+      final keepDays =
+          int.tryParse(await ShadowDb.getSetting('retention_days') ?? '') ?? 30;
+      await ShadowDb.applyRetention(keepDays);
       _sessionId = await ShadowDb.startSession(timestamp);
     } catch (e) {
       debugPrint('WARN db start: $e');

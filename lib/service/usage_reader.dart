@@ -93,6 +93,14 @@ class UsageReader {
     await _ch.invokeMethod('openUsageAccessSettings');
   }
 
+  static Future<void> openBatterySettings() async {
+    await _ch.invokeMethod('openBatterySettings');
+  }
+
+  static Future<void> openNotificationSettings() async {
+    await _ch.invokeMethod('openNotificationSettings');
+  }
+
   static Future<List<AppUsage>> query(DateTime start, DateTime end) async {
     final raw = await _ch.invokeMethod<List<dynamic>>('queryUsage', {
       'startMs': start.millisecondsSinceEpoch,

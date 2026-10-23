@@ -284,6 +284,28 @@ class ShadowDb {
     });
   }
 
+  static Future<void> applyRetention(int days) async {
+    final db = await open();
+    final now = DateTime.now();
+    final cut = DateTime(now.year, now.month, now.day - days);
+    final cutDay = '${cut.year.toString().padLeft(4, '0')}-'
+        '${cut.month.toString().padLeft(2, '0')}-'
+        '${cut.day.toString().padLeft(2, '0')}';
+    final cutIso =
+    now.toUtc().subtract(Duration(days: days)).toIso8601String();
+    await db.delete('windows', where: 'end_ts < ?', whereArgs: [cutIso]);
+    await db.delete('sessions', where: 'started_at < ?', whereArgs: [cutIso]);
+    await db.delete('app_usage_daily', where: 'day < ?', whereArgs: [cutDay]);
+    await db.delete('app_usage_hourly', where: 'day < ?', whereArgs: [cutDay]);
+    await db.delete('usage_behavior_hourly',
+        where: 'day < ?', whereArgs: [cutDay]);
+  }
+
+  static Future<void> deleteAllSettings() async {
+    final db = await open();
+    await db.delete('settings');
+  }
+
   static Future<void> deleteAll() async {
     final db = await open();
     await db.delete('windows');

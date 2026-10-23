@@ -64,6 +64,25 @@ class MainActivity : FlutterActivity() {
                                 result.success(queryScreenIntervals(start, end))
                             }
                         }
+
+                        "openBatterySettings" -> {
+                            val i = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(i)
+                            result.success(true)
+                        }
+                        "openNotificationSettings" -> {
+                            val i = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                            } else {
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                                    .setData(android.net.Uri.parse("package:$packageName"))
+                            }
+                            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(i)
+                            result.success(true)
+                        }
                         else -> result.notImplemented()
                     }
                 } catch (e: Exception) {

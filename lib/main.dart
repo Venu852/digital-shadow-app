@@ -4,6 +4,8 @@ import 'package:test_app/service/task_handler.dart';
 import 'package:test_app/data/db.dart';
 import 'package:test_app/ui/usage_summary_screen.dart';
 import 'package:test_app/service/usage_sync.dart';
+import 'package:test_app/ui/consent_screen.dart';
+import 'package:test_app/ui/settings_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,7 +18,36 @@ class DigitalShadowApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      const MaterialApp(home: HomeScreen());
+      const MaterialApp(home: StartGate());
+}
+
+class StartGate extends StatefulWidget {
+  const StartGate({super.key});
+
+  @override
+  State<StartGate> createState() => _StartGateState();
+}
+
+class _StartGateState extends State<StartGate> {
+  @override
+  void initState() {
+    super.initState();
+    ConsentState.load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool?>(
+      valueListenable: ConsentState.accepted,
+      builder: (context, accepted, _) {
+        if (accepted == null) {
+          return const Scaffold(
+              body: Center(child: CircularProgressIndicator()));
+        }
+        return accepted ? const HomeScreen() : const ConsentScreen();
+      },
+    );
+  }
 }
 
 class HomeScreen extends StatefulWidget {
@@ -99,6 +130,9 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     _refreshStored();
     UsageSync.syncRecentDays().catchError((_) => 0);
+    ShadowDb.getSetting('retention_days')
+        .then((v) => ShadowDb.applyRetention(int.tryParse(v ?? '') ?? 30))
+        .catchError((_) {});
   }
 
   @override
@@ -127,7 +161,17 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Digital Shadow')),
+      appBar: AppBar(
+        title: const Text('Digital Shadow'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
+          ),
+        ],
+      ),
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
