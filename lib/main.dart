@@ -6,6 +6,8 @@ import 'package:test_app/ui/usage_summary_screen.dart';
 import 'package:test_app/service/usage_sync.dart';
 import 'package:test_app/ui/consent_screen.dart';
 import 'package:test_app/ui/settings_screen.dart';
+import 'package:test_app/service/usage_reader.dart';
+import 'package:test_app/ui/results_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -141,7 +143,43 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  /// Returns true to continue starting the session.
+  Future<bool> _maybeBatteryHint() async {
+    try {
+      final shown = await ShadowDb.getSetting('battery_hint_shown');
+      if (shown == '1' || !mounted) return true;
+      await ShadowDb.setSetting('battery_hint_shown', '1');
+      if (!mounted) return true;
+      final open = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Keep the session running'),
+          content: const Text(
+              'To keep collecting while the screen is off, set this app to '
+                  '"Unrestricted" or "Don\'t optimise" in the battery settings. '
+                  'You can also do this later in Settings.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Not now')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Open battery settings')),
+          ],
+        ),
+      );
+      if (open == true) {
+        await UsageReader.openBatterySettings();
+        return false; // Tap Start again after coming back.
+      }
+    } catch (_) {
+      // Never block starting because of the hint.
+    }
+    return true;
+  }
+
   Future<void> _start() async {
+    if (!await _maybeBatteryHint()) return;
     await FlutterForegroundTask.requestNotificationPermission();
     await FlutterForegroundTask.startService(
       serviceId: 256,
@@ -231,6 +269,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 MaterialPageRoute(builder: (_) => const UsageSummaryScreen()),
               ),
               child: const Text('App usage '),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ResultsScreen()),
+              ),
+              child: const Text('Results'),
             ),
           ],
         ),

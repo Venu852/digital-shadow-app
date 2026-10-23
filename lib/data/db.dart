@@ -306,6 +306,22 @@ class ShadowDb {
     await db.delete('settings');
   }
 
+  static Future<List<Map<String, Object?>>> windowsSince(String iso) async {
+    final db = await open();
+    return db.query('windows',
+        columns: ['end_ts', 'score', 'is_anomaly', 'features_json'],
+        where: 'end_ts >= ?',
+        whereArgs: [iso],
+        orderBy: 'end_ts ASC');
+  }
+
+  static Future<List<Map<String, Object?>>> recentSessions(int limit) async {
+    final db = await open();
+    return db.rawQuery(
+        'SELECT s.id AS id, s.started_at AS started_at, s.ended_at AS ended_at, COUNT(w.id) AS windows, COALESCE(SUM(CASE WHEN w.is_anomaly = 1 THEN 1 ELSE 0 END), 0) AS flagged FROM sessions s LEFT JOIN windows w ON w.session_id = s.id GROUP BY s.id ORDER BY s.started_at DESC LIMIT ?',
+        [limit]);
+  }
+
   static Future<void> deleteAll() async {
     final db = await open();
     await db.delete('windows');
