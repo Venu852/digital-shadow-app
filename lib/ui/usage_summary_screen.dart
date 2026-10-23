@@ -311,18 +311,20 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
         return 'Distinct apps';
       case 'fgMin':
         return 'Screen time';
+      case 'screenMin':
+        return 'Screen on';
       default:
         return f;
     }
   }
 
   String _featVal(String f, double v) {
-    if (f == 'fgMin') return _fmt((v * 60000).round());
+    if (f == 'fgMin' || f == 'screenMin') return _fmt((v * 60000).round());
     return v.round().toString();
   }
 
   String _featExp(String f, double v) {
-    if (f == 'fgMin') return _fmt((v * 60000).round());
+    if (f == 'fgMin' || f == 'screenMin') return _fmt((v * 60000).round());
     return v.toStringAsFixed(1);
   }
 
@@ -349,7 +351,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
         lines.add(const Text(
             'Predicted for today (so far + your usual for the rest of the day)',
             style: TextStyle(fontWeight: FontWeight.w600)));
-        for (final f in const ['pickups', 'opens', 'fgMin']) {
+        for (final f in const ['pickups', 'opens', 'fgMin', 'screenMin']) {
           final fc = ins.forecasts[f];
           if (fc == null) continue;
           lines.add(Text('${_featLabel(f, ins.unlocksReported)}: '
@@ -404,6 +406,8 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
     }
 
     final perDay = _days == 1 ? '' : ' (per day, average of $days days)';
+    final screenMs = b['screen_ms'] ?? 0;
+    final screenShown = _days == 1 ? screenMs : (screenMs / days).round();
     final noUnlock = (b['unlocks'] ?? 0) == 0 && (b['wakeups'] ?? 0) > 0;
     final events = UsageSync.lastTypeCounts.entries.toList()
       ..sort((a, c) =>
@@ -421,6 +425,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
             const SizedBox(height: 8),
             Text('Phone unlocks: ${v('unlocks')}'),
             Text('Screen wake-ups: ${v('wakeups')}'),
+            Text('Screen on time: ${_fmt(screenShown)}'),
             Text('App opens: ${v('opens')}'),
             Text('App switches: ${v('switches')}'),
             Text('Distinct apps used: ${b['apps'] ?? 0}'),

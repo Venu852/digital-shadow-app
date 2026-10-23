@@ -22,7 +22,7 @@ class ShadowDb {
 
   static Future<void> _createBehaviorTable(Database db) async {
     await db.execute(
-        'CREATE TABLE IF NOT EXISTS usage_behavior_hourly(day TEXT NOT NULL, hour INTEGER NOT NULL, opens INTEGER NOT NULL, switches INTEGER NOT NULL, wakeups INTEGER NOT NULL, unlocks INTEGER NOT NULL, PRIMARY KEY(day, hour))');
+        'CREATE TABLE IF NOT EXISTS usage_behavior_hourly(day TEXT NOT NULL, hour INTEGER NOT NULL, opens INTEGER NOT NULL, switches INTEGER NOT NULL, wakeups INTEGER NOT NULL, unlocks INTEGER NOT NULL, screen_ms INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(day, hour))');
   }
 
   static Future<Database> open() async {
@@ -31,7 +31,7 @@ class ShadowDb {
     final path = '${await getDatabasesPath()}/digital_shadow.db';
     final db = await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onConfigure: (db) async {
         try {
           await db.rawQuery('PRAGMA journal_mode=WAL');
@@ -53,6 +53,14 @@ class ShadowDb {
         if (oldVersion < 3) await _createSettingsTable(db);
         if (oldVersion < 4) await _createHourlyTable(db);
         if (oldVersion < 5) await _createBehaviorTable(db);
+        if (oldVersion < 6) {
+          try {
+            await db.execute(
+                'ALTER TABLE usage_behavior_hourly ADD COLUMN screen_ms INTEGER NOT NULL DEFAULT 0');
+          } catch (_) {
+            // Column already exists (table was just created with it).
+          }
+        }
       },
     );
     _db = db;
@@ -221,7 +229,7 @@ class ShadowDb {
       String fromDay, String toDay) async {
     final db = await open();
     final r = await db.rawQuery(
-        'SELECT COALESCE(SUM(opens),0) AS opens, COALESCE(SUM(switches),0) AS switches, COALESCE(SUM(wakeups),0) AS wakeups, COALESCE(SUM(unlocks),0) AS unlocks, COUNT(DISTINCT day) AS days FROM usage_behavior_hourly WHERE day >= ? AND day <= ?',
+        'SELECT COALESCE(SUM(opens),0) AS opens, COALESCE(SUM(switches),0) AS switches, COALESCE(SUM(wakeups),0) AS wakeups, COALESCE(SUM(unlocks),0) AS unlocks, COALESCE(SUM(screen_ms),0) AS screen_ms, COUNT(DISTINCT day) AS days FROM usage_behavior_hourly WHERE day >= ? AND day <= ?',
         [fromDay, toDay]);
     final a = await db.rawQuery(
         'SELECT COUNT(DISTINCT package) AS apps FROM app_usage_hourly WHERE day >= ? AND day <= ? AND total_ms > 0',
@@ -233,6 +241,7 @@ class ShadowDb {
       'switches': g(row, 'switches'),
       'wakeups': g(row, 'wakeups'),
       'unlocks': g(row, 'unlocks'),
+      'screen_ms': g(row, 'screen_ms'),
       'days': g(row, 'days'),
       'apps': g(a.first, 'apps'),
     };
@@ -251,6 +260,28 @@ class ShadowDb {
     return db.rawQuery(
         'SELECT day, hour, SUM(total_ms) AS ms, COUNT(DISTINCT package) AS apps FROM app_usage_hourly WHERE day >= ? AND day <= ? AND total_ms > 0 GROUP BY day, hour',
         [fromDay, toDay]);
+  }
+
+  static Future<List<Map<String, Object?>>> windowsBetween(
+      String startIso, String endIso) async {
+    final db = await open();
+    return db.query('windows',
+        columns: ['id', 'features_json'],
+        where: 'end_ts >= ? AND end_ts < ?',
+        whereArgs: [startIso, endIso]);
+  }
+
+  static Future<void> updateWindowFeatures(
+      List<MapEntry<int, String>> updates) async {
+    final db = await open();
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final u in updates) {
+        batch.update('windows', {'features_json': u.value},
+            where: 'id = ?', whereArgs: [u.key]);
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   static Future<void> deleteAll() async {

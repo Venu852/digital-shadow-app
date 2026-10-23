@@ -55,6 +55,15 @@ class MainActivity : FlutterActivity() {
                                 result.success(queryBehaviorHourly(start, end))
                             }
                         }
+                        "queryScreenIntervals" -> {
+                            val start = call.argument<Number>("startMs")?.toLong()
+                            val end = call.argument<Number>("endMs")?.toLong()
+                            if (start == null || end == null) {
+                                result.error("ARGS", "startMs and endMs required", null)
+                            } else {
+                                result.success(queryScreenIntervals(start, end))
+                            }
+                        }
                         else -> result.notImplemented()
                     }
                 } catch (e: Exception) {
@@ -100,6 +109,37 @@ class MainActivity : FlutterActivity() {
 
     private fun isHomeApp(pkg: String): Boolean =
         homePackages().contains(pkg) || pkg.contains("launcher", ignoreCase = true)
+
+    @Suppress("DEPRECATION")
+    private fun queryScreenIntervals(startMs: Long, endMs: Long): List<List<Long>> {
+        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val events = usm.queryEvents(startMs, endMs)
+        val e = UsageEvents.Event()
+        val out = ArrayList<List<Long>>()
+        var onAt: Long? = null
+        var sawAny = false
+        while (events.hasNextEvent()) {
+            events.getNextEvent(e)
+            when (e.eventType) {
+                15 -> { // screen on
+                    if (onAt == null) onAt = e.timeStamp
+                    sawAny = true
+                }
+                16 -> { // screen off
+                    val st: Long? = onAt ?: (if (!sawAny) startMs else null)
+                    if (st != null && e.timeStamp > st) out.add(listOf(st, e.timeStamp))
+                    onAt = null
+                    sawAny = true
+                }
+            }
+        }
+        val open = onAt
+        if (open != null) {
+            val end = minOf(endMs, System.currentTimeMillis())
+            if (end > open) out.add(listOf(open, end))
+        }
+        return out
+    }
 
     @Suppress("DEPRECATION")
     private fun queryUsage(startMs: Long, endMs: Long): List<Map<String, Any>> {

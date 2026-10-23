@@ -1,6 +1,13 @@
 import 'dart:math';
 
-const List<String> kFeatures = ['pickups', 'opens', 'switches', 'apps', 'fgMin'];
+const List<String> kFeatures = [
+  'pickups',
+  'opens',
+  'switches',
+  'apps',
+  'fgMin',
+  'screenMin'
+];
 
 /// Smallest deviation unit per feature, so a perfectly regular baseline
 /// (std = 0) does not turn a tiny change into a huge score.
@@ -10,6 +17,7 @@ const Map<String, double> kMinStd = {
   'switches': 1.0,
   'apps': 1.0,
   'fgMin': 3.0,
+  'screenMin': 3.0,
 };
 
 const int kMinBaselineDays = 3;
@@ -144,6 +152,7 @@ UsageInsights analyzeUsage({
     'switches': 0.0,
     'apps': 0.0,
     'fgMin': 0.0,
+    'screenMin': 0.0,
   };
 
   var totalUnlocks = 0.0;
@@ -166,6 +175,7 @@ UsageInsights analyzeUsage({
     c['pickups'] = useUnlocks ? num0(r['unlocks']) : num0(r['wakeups']);
     c['opens'] = num0(r['opens']);
     c['switches'] = num0(r['switches']);
+    c['screenMin'] = num0(r['screen_ms']) / 60000.0;
   }
   for (final r in fgRows) {
     final h = num0(r['hour']).toInt();
@@ -232,7 +242,7 @@ UsageInsights analyzeUsage({
     if (flagsWeek.length > 12) flagsWeek.removeRange(12, flagsWeek.length);
 
     final cur = now.hour;
-    for (final f in const ['pickups', 'opens', 'fgMin']) {
+    for (final f in const ['pickups', 'opens', 'fgMin', 'screenMin']) {
       var actual = 0.0;
       for (final s in todays) {
         if (s.hour <= cur) actual += s.f[f] ?? 0.0;

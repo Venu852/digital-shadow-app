@@ -121,4 +121,15 @@ class UsageReader {
     });
     return BehaviorHourly.fromMap(raw ?? <dynamic, dynamic>{});
   }
+  static Future<List<List<int>>> queryScreenIntervals(
+      DateTime start, DateTime end) async {
+    final raw = await _ch.invokeMethod<List<dynamic>>('queryScreenIntervals', {
+      'startMs': start.millisecondsSinceEpoch,
+      'endMs': end.millisecondsSinceEpoch,
+    });
+    return (raw ?? [])
+        .map((e) =>
+        (e as List<dynamic>).map((x) => (x as num).toInt()).toList())
+        .toList();
+  }
 }
