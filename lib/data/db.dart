@@ -5,6 +5,17 @@ import 'package:sqflite/sqflite.dart';
 class ShadowDb {
   static Database? _db;
 
+  /// Settings written by the server sync; cleared with the outbox.
+  static const List<String> syncSettingKeys = [
+    'server_url',
+    'device_id',
+    'device_token',
+    'paired_username',
+    'sharing_level',
+    'last_sync_at',
+    'sync_status',
+  ];
+
   static Future<void> _createUsageTable(Database db) async {
     await db.execute(
         'CREATE TABLE IF NOT EXISTS app_usage_daily(day TEXT NOT NULL, package TEXT NOT NULL, label TEXT, total_ms INTEGER NOT NULL, sessions INTEGER NOT NULL, last_used_ms INTEGER, category INTEGER, PRIMARY KEY(day, package))');
@@ -25,13 +36,18 @@ class ShadowDb {
         'CREATE TABLE IF NOT EXISTS usage_behavior_hourly(day TEXT NOT NULL, hour INTEGER NOT NULL, opens INTEGER NOT NULL, switches INTEGER NOT NULL, wakeups INTEGER NOT NULL, unlocks INTEGER NOT NULL, screen_ms INTEGER NOT NULL DEFAULT 0, notifications INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(day, hour))');
   }
 
+  static Future<void> _createOutboxTable(Database db) async {
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS outbox(day TEXT PRIMARY KEY, payload_json TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, created_at TEXT NOT NULL, sent_at TEXT)');
+  }
+
   static Future<Database> open() async {
     final existing = _db;
     if (existing != null) return existing;
     final path = '${await getDatabasesPath()}/digital_shadow.db';
     final db = await openDatabase(
       path,
-      version: 7,
+      version: 8,
       onConfigure: (db) async {
         try {
           await db.rawQuery('PRAGMA journal_mode=WAL');
@@ -48,6 +64,7 @@ class ShadowDb {
         await _createSettingsTable(db);
         await _createHourlyTable(db);
         await _createBehaviorTable(db);
+        await _createOutboxTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 3) await _createSettingsTable(db);
@@ -69,6 +86,7 @@ class ShadowDb {
             // Column already exists (table was just created with it).
           }
         }
+        if (oldVersion < 8) await _createOutboxTable(db);
       },
     );
     _db = db;
@@ -340,5 +358,45 @@ class ShadowDb {
     await db.delete('usage_behavior_hourly');
     await db.delete('settings',
         where: 'setting_key = ?', whereArgs: ['motion_baseline']);
+    await db.delete('outbox');
+    await deleteSettings(syncSettingKeys);
+  }
+
+  static Future<void> deleteSettings(List<String> keys) async {
+    if (keys.isEmpty) return;
+    final db = await open();
+    await db.delete('settings',
+        where: 'setting_key IN (${List.filled(keys.length, '?').join(',')})',
+        whereArgs: keys);
+  }
+
+  // ---- Outbox (daily summaries waiting for upload) ----
+
+  static Future<Map<String, Object?>?> outboxGet(String day) async {
+    final db = await open();
+    final r = await db.query('outbox',
+        where: 'day = ?', whereArgs: [day], limit: 1);
+    return r.isEmpty ? null : r.first;
+  }
+
+  static Future<void> outboxPut(Map<String, Object?> row) async {
+    final db = await open();
+    await db.insert('outbox', row,
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  static Future<List<Map<String, Object?>>> outboxPending(int? limit) async {
+    final db = await open();
+    return db.query('outbox',
+        where: 'sent_at IS NULL AND last_error IS NULL',
+        orderBy: 'day ASC',
+        limit: limit);
+  }
+
+  static Future<List<Map<String, Object?>>> outboxFailed() async {
+    final db = await open();
+    return db.query('outbox',
+        where: 'sent_at IS NULL AND last_error IS NOT NULL',
+        orderBy: 'day DESC');
   }
 }

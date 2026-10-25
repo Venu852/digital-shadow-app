@@ -8,6 +8,7 @@ import 'package:test_app/ui/consent_screen.dart';
 import 'package:test_app/ui/settings_screen.dart';
 import 'package:test_app/service/usage_reader.dart';
 import 'package:test_app/ui/results_screen.dart';
+import 'package:test_app/sync/sync_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -119,7 +120,10 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) setState(() => _running = v);
     });
     _refreshStored();
-    UsageSync.syncRecentDays().catchError((_) => 0);
+    UsageSync.syncRecentDays()
+        .catchError((_) => 0)
+        .then((_) => SyncService.instance.run())
+        .catchError((_) => const SyncResult(SyncState.stopped));
     ShadowDb.getSetting('retention_days')
         .then((v) => ShadowDb.applyRetention(int.tryParse(v ?? '') ?? 30))
         .catchError((_) {});
@@ -264,7 +268,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   builder: (c) => AlertDialog(
                     title: const Text('Delete all data?'),
                     content: const Text(
-                        'This removes every stored window on this phone.'),
+                        'This removes every stored window on this phone and '
+                            'forgets its server pairing.'),
                     actions: [
                       TextButton(
                           onPressed: () => Navigator.pop(c, false),

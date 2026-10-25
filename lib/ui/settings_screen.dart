@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:test_app/data/db.dart';
 import 'package:test_app/service/usage_reader.dart';
+import 'package:test_app/ui/account_screen.dart';
 import 'package:test_app/ui/consent_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -18,6 +19,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   int _windows = 0;
   int _usageDays = 0;
   bool _autoRestart = false;
+  String _pairedAs = '';
 
   @override
   void initState() {
@@ -45,6 +47,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       final w = await ShadowDb.countWindows();
       final d = (await ShadowDb.usageDaySummaries()).length;
       final ar = (await ShadowDb.getSetting('auto_restart')) == '1';
+      final user = await ShadowDb.getSetting('paired_username') ?? '';
       if (mounted) {
         setState(() {
           _usageAccess = access;
@@ -52,6 +55,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           _windows = w;
           _usageDays = d;
           _autoRestart = ar;
+          _pairedAs = user;
         });
       }
     } catch (_) {
@@ -81,7 +85,8 @@ class _SettingsScreenState extends State<SettingsScreen>
   Future<void> _deleteAll() async {
     final ok = await _confirm('Delete all data?',
         'This removes every stored window, usage record and the learned '
-            'baseline on this phone. Your limits are kept.');
+            'baseline on this phone, and forgets its server pairing and any '
+            'days waiting to upload. Your limits are kept.');
     if (!ok) return;
     await ShadowDb.deleteAll();
     await _load();
@@ -134,6 +139,20 @@ class _SettingsScreenState extends State<SettingsScreen>
             subtitle: const Text('Needed for the "session active" notice'),
             trailing: const Icon(Icons.open_in_new),
             onTap: () => UsageReader.openNotificationSettings(),
+          ),
+          _section('Account and sharing'),
+          ListTile(
+            title: const Text('Account and sharing'),
+            subtitle: Text(_pairedAs.isEmpty
+                ? 'Not paired. Nothing is uploaded.'
+                : 'Paired as $_pairedAs'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AccountScreen()),
+              );
+              await _load();
+            },
           ),
           _section('Session'),
           SwitchListTile(
