@@ -419,6 +419,13 @@ class ShadowDb {
         orderBy: 'day DESC');
   }
 
+  /// Sent rows, newest send first.
+  static Future<List<Map<String, Object?>>> outboxSent(int limit) async {
+    final db = await open();
+    return db.query('outbox',
+        where: 'sent_at IS NOT NULL', orderBy: 'sent_at DESC', limit: limit);
+  }
+
   // ---- Daily drift ----
 
   static Future<void> putDayRhythm(

@@ -8,7 +8,14 @@ import 'package:test_app/sync/server_client.dart';
 import 'package:test_app/sync/sync_service.dart';
 
 class AccountScreen extends StatefulWidget {
-  const AccountScreen({super.key});
+  /// Shown inside the Privacy tab: no app bar and no sharing choice, which
+  /// the tab shows itself.
+  final bool embedded;
+
+  /// Called after the pairing or upload state may have changed.
+  final VoidCallback? onChanged;
+
+  const AccountScreen({super.key, this.embedded = false, this.onChanged});
 
   @override
   State<AccountScreen> createState() => _AccountScreenState();
@@ -104,6 +111,7 @@ class _AccountScreenState extends State<AccountScreen> {
       await ShadowDb.setSetting('sync_status', SyncStatus.signedOut);
     }
     await _load();
+    widget.onChanged?.call();
   }
 
   void _snack(String text) {
@@ -139,6 +147,7 @@ class _AccountScreenState extends State<AccountScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
       await _load();
+      widget.onChanged?.call();
     }
   }
 
@@ -369,8 +378,8 @@ class _AccountScreenState extends State<AccountScreen> {
       title: Text('Paired as $_pairedAs'),
       subtitle: Text(_url.text),
     ),
-    _section('What you share'),
-    RadioGroup<String>(
+    if (!widget.embedded) _section('What you share'),
+    if (!widget.embedded) RadioGroup<String>(
       groupValue: _level,
       onChanged: _setLevel,
       child: Column(
@@ -434,6 +443,13 @@ class _AccountScreenState extends State<AccountScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.embedded) {
+      if (!_loaded) return const Center(child: CircularProgressIndicator());
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: _paired ? _pairedView() : _pairForm(),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Account and sharing')),
       body: !_loaded

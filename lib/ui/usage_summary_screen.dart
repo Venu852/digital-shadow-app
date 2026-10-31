@@ -4,6 +4,7 @@ import 'package:test_app/service/app_categories.dart';
 import 'package:test_app/service/usage_reader.dart';
 import 'package:test_app/service/usage_sync.dart';
 import 'package:test_app/service/usage_model.dart';
+import 'package:test_app/ui/theme.dart';
 
 const String _ownPackage = 'com.example.test_app';
 
@@ -466,7 +467,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
         over > 0
             ? 'Over your ${limit}m limit by ${_fmt(over)}'
             : 'Limit ${limit}m, ${_fmt(limMs - ms)} left',
-        style: TextStyle(color: over > 0 ? Colors.red : null),
+        style: TextStyle(color: over > 0 ? ShadowColors.amberText : null),
       ));
     } else if (_days == 1) {
       lines.add(const Text('Tap to set a daily limit'));
@@ -552,7 +553,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
           children.add(Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text('Over limit today: ${over.join(', ')}',
-                style: const TextStyle(color: Colors.red)),
+                style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ));
         }
       }
@@ -604,7 +605,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
                     a.ms > limMs
                         ? 'Over your ${limit}m limit by ${_fmt(a.ms - limMs)}'
                         : 'Limit ${limit}m, ${_fmt(limMs - a.ms)} left',
-                    style: TextStyle(color: a.ms > limMs ? Colors.red : null),
+                    style: TextStyle(color: a.ms > limMs ? ShadowColors.amberText : null),
                   ),
               ],
             ),
@@ -649,7 +650,7 @@ class _UsageSummaryScreenState extends State<UsageSummaryScreen>
           if (_error.isNotEmpty)
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(_error, style: const TextStyle(color: Colors.red)),
+              child: Text(_error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
             ),
           Expanded(
             child: RefreshIndicator(

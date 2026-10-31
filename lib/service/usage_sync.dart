@@ -1,9 +1,9 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:test_app/data/db.dart';
 import 'package:test_app/service/screen_state.dart';
 import 'package:test_app/service/usage_reader.dart';
+import 'package:test_app/util/log.dart';
 
 class UsageSync {
   static bool _running = false;
@@ -45,7 +45,7 @@ class UsageSync {
       }
     }
     if (updates.isNotEmpty) await ShadowDb.updateWindowFeatures(updates);
-    debugPrint('SYNC screen fill: ${updates.length} windows, e.g. $samples');
+    dlog('SYNC screen fill: ${updates.length} windows, e.g. $samples');
     return updates.length;
   }
 

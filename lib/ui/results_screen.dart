@@ -6,6 +6,7 @@ import 'package:test_app/drift/drift_engine.dart';
 import 'package:test_app/drift/drift_runner.dart';
 import 'package:test_app/service/usage_sync.dart';
 import 'package:test_app/sync/sync_service.dart';
+import 'package:test_app/ui/theme.dart';
 import 'package:test_app/ui/usage_summary_screen.dart';
 
 String _two(int v) => v.toString().padLeft(2, '0');
@@ -418,7 +419,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
       const SizedBox(height: 8),
       if (_loading) const LinearProgressIndicator(),
       if (_error.isNotEmpty)
-        Text(_error, style: const TextStyle(color: Colors.red)),
+        Text(_error, style: TextStyle(color: scheme.error)),
     ];
 
     if (!_loading && total == 0) {
@@ -470,7 +471,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
                 buckets: _buckets,
                 selected: sel,
                 barColor: scheme.primary,
-                flagColor: Colors.redAccent,
+                flagColor: ShadowColors.amber,
                 gridColor: scheme.outlineVariant,
                 textColor: scheme.onSurfaceVariant,
                 mutedColor: scheme.outline,
@@ -480,7 +481,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
         }),
         const SizedBox(height: 4),
         const Text(
-          'Red: contains flagged windows. Gray: not scored yet. The dashed '
+          'Amber: contains flagged windows. Gray: not scored yet. The dashed '
               'line is the 0.5 flag threshold. Gaps mean no session was running.',
           style: TextStyle(fontSize: 11),
         ),

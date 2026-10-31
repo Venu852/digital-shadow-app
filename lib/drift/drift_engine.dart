@@ -351,3 +351,13 @@ List<DayDrift> scoreRecentDays(List<DayRaw> raw, String lastDay,
       scoreDay(addDays(lastDay, -i), history, offsetFor: offsetFor)
   ];
 }
+
+/// Plain words for where the drift is heading, from established drifts
+/// oldest first: the newest value minus the one three entries earlier.
+String horizonFor(List<int> drifts) {
+  if (drifts.length < 4) return 'Not enough days yet';
+  final slope = drifts.last - drifts[drifts.length - 4];
+  if (slope > 8) return '2 to 3 weeks if the trend continues';
+  if (slope > 2) return '4 to 6 weeks if the trend continues';
+  return 'No defined trend: stable or improving';
+}

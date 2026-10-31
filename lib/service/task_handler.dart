@@ -3,12 +3,12 @@ import 'dart:convert';
 
 import 'package:battery_plus/battery_plus.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:test_app/data/db.dart';
 import 'package:test_app/service/anomaly_model.dart';
 import 'package:test_app/service/window_aggregator.dart';
+import 'package:test_app/util/log.dart';
 
 @pragma('vm:entry-point')
 void startCallback() {
@@ -31,7 +31,7 @@ class ShadowTaskHandler extends TaskHandler {
     try {
       return await _battery.batteryLevel;
     } catch (e) {
-      debugPrint('WARN battery level: $e');
+      dlog('WARN battery level: $e');
       return null;
     }
   }
@@ -41,7 +41,7 @@ class ShadowTaskHandler extends TaskHandler {
       final s = await _battery.batteryState;
       return s == BatteryState.charging || s == BatteryState.full;
     } catch (e) {
-      debugPrint('WARN battery state: $e');
+      dlog('WARN battery state: $e');
       return null;
     }
   }
@@ -55,14 +55,14 @@ class ShadowTaskHandler extends TaskHandler {
       if (r.isEmpty || r.contains(ConnectivityResult.none)) return 'none';
       return 'other';
     } catch (e) {
-      debugPrint('WARN network: $e');
+      dlog('WARN network: $e');
       return null;
     }
   }
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
-    debugPrint('ShadowTask started $timestamp');
+    dlog('ShadowTask started $timestamp');
     try {
       final consent = await ShadowDb.getSetting('consent_v1');
       final auto = (await ShadowDb.getSetting('auto_restart')) == '1';
@@ -72,12 +72,12 @@ class ShadowTaskHandler extends TaskHandler {
       final fromUi =
           DateTime.now().millisecondsSinceEpoch - lastManual < 30000;
       if (consent == null || consent.isEmpty || (!fromUi && !auto)) {
-        debugPrint('Service started without consent or opt-in; stopping');
+        dlog('Service started without consent or opt-in; stopping');
         await FlutterForegroundTask.stopService();
         return;
       }
     } catch (e) {
-      debugPrint('WARN start guard: $e');
+      dlog('WARN start guard: $e');
     }
     _batteryStart = await _readBatteryLevel();
     _agg.start(timestamp);
@@ -88,7 +88,7 @@ class ShadowTaskHandler extends TaskHandler {
       await ShadowDb.applyRetention(keepDays);
       _sessionId = await ShadowDb.startSession(timestamp);
     } catch (e) {
-      debugPrint('WARN db start: $e');
+      dlog('WARN db start: $e');
     }
 
     try {
@@ -97,7 +97,7 @@ class ShadowTaskHandler extends TaskHandler {
         _model = AnomalyModel.fromJsonString(saved);
       }
     } catch (e) {
-      debugPrint('WARN baseline load: $e');
+      dlog('WARN baseline load: $e');
     }
 
     try {
@@ -105,28 +105,28 @@ class ShadowTaskHandler extends TaskHandler {
         samplingPeriod: const Duration(milliseconds: 50),
       ).listen(
             (e) => _agg.addAccel(e.x, e.y, e.z),
-        onError: (Object e) => debugPrint('WARN accel stream: $e'),
+        onError: (Object e) => dlog('WARN accel stream: $e'),
         cancelOnError: false,
       );
     } catch (e) {
-      debugPrint('WARN accel subscribe: $e');
+      dlog('WARN accel subscribe: $e');
     }
     try {
       _gyroSub = gyroscopeEventStream(
         samplingPeriod: const Duration(milliseconds: 50),
       ).listen(
             (e) => _agg.addGyro(e.x, e.y, e.z),
-        onError: (Object e) => debugPrint('WARN gyro stream: $e'),
+        onError: (Object e) => dlog('WARN gyro stream: $e'),
         cancelOnError: false,
       );
     } catch (e) {
-      debugPrint('WARN gyro subscribe: $e');
+      dlog('WARN gyro subscribe: $e');
     }
   }
 
   @override
   void onRepeatEvent(DateTime timestamp) {
-    debugPrint('heartbeat $timestamp');
+    dlog('heartbeat $timestamp');
     FlutterForegroundTask.sendDataToMain(
         {'heartbeat': timestamp.millisecondsSinceEpoch});
     _closeWindowIfDue(timestamp);
@@ -157,7 +157,7 @@ class ShadowTaskHandler extends TaskHandler {
         summary['calibrating'] = result.calibrating;
         summary['windows_seen'] = result.windowsSeen;
       } catch (e) {
-        debugPrint('WARN model: $e');
+        dlog('WARN model: $e');
       }
 
       try {
@@ -165,16 +165,16 @@ class ShadowTaskHandler extends TaskHandler {
             score: result?.score,
             isAnomaly: result?.score == null ? null : result!.isAnomaly);
       } catch (e) {
-        debugPrint('WARN db insert: $e');
+        dlog('WARN db insert: $e');
       }
 
       try {
         await ShadowDb.setSetting('motion_baseline', _model.toJsonString());
       } catch (e) {
-        debugPrint('WARN baseline save: $e');
+        dlog('WARN baseline save: $e');
       }
 
-      debugPrint('WINDOW ${jsonEncode(summary)}');
+      dlog('WINDOW ${jsonEncode(summary)}');
       FlutterForegroundTask.sendDataToMain({'window': summary});
       try {
         await FlutterForegroundTask.saveData(
@@ -182,10 +182,10 @@ class ShadowTaskHandler extends TaskHandler {
         await FlutterForegroundTask.saveData(
             key: 'window_count', value: _windowCount);
       } catch (e) {
-        debugPrint('WARN saveData: $e');
+        dlog('WARN saveData: $e');
       }
     } catch (e) {
-      debugPrint('WARN close window: $e');
+      dlog('WARN close window: $e');
     }
   }
 
@@ -197,8 +197,8 @@ class ShadowTaskHandler extends TaskHandler {
       final id = _sessionId;
       if (id != null) await ShadowDb.endSession(id, timestamp);
     } catch (e) {
-      debugPrint('WARN db end: $e');
+      dlog('WARN db end: $e');
     }
-    debugPrint('ShadowTask destroyed');
+    dlog('ShadowTask destroyed');
   }
 }
