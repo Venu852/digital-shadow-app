@@ -1,17 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:test_app/data/db.dart';
+import 'package:test_app/drift/drift_engine.dart';
+import 'package:test_app/drift/drift_runner.dart';
 import 'package:test_app/service/usage_sync.dart';
 import 'package:test_app/sync/server_client.dart';
 import 'package:test_app/sync/sync_service.dart';
-
-/// "+05:30" style offset, as the server expects in `tz`.
-String formatTzOffset(Duration offset) {
-  final sign = offset.isNegative ? '-' : '+';
-  final m = offset.inMinutes.abs();
-  return '$sign${(m ~/ 60).toString().padLeft(2, '0')}:'
-      '${(m % 60).toString().padLeft(2, '0')}';
-}
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -236,7 +230,7 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Future<void> _syncNow() => _guard(() async {
-    _snack(_resultText(await _sync.run(force: true)));
+    _snack(_resultText(await DriftRunner.instance.run(force: true)));
   });
 
   Future<void> _sendTestSummary() => _guard(() async {

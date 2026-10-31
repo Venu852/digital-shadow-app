@@ -141,6 +141,16 @@ class UsageSync {
 
         if (screenIntervals.isNotEmpty) {
           try {
+            final rhythm =
+                dayRhythm(screenIntervals, start.millisecondsSinceEpoch);
+            if (rhythm != null) {
+              await ShadowDb.putDayRhythm(
+                  dayKey(start), rhythm.firstOnMin, rhythm.lastOffMin);
+            }
+          } catch (_) {
+            // The routine timing signal is optional.
+          }
+          try {
             await _fillWindowScreen(start, end, screenIntervals);
           } catch (_) {
             // Filling stored windows is best effort.

@@ -28,4 +28,40 @@ void main() {
     expect(screenFraction(iv, 15000, 45000), closeTo(0.5, 1e-9));
     expect(screenFraction(iv, 40000, 70000), closeTo(0.0, 1e-9));
   });
+
+  group('dayRhythm', () {
+    const m = 60000;
+
+    test('first on at or after 05:00 and last off', () {
+      final r = dayRhythm([
+        [60 * m, 90 * m], // 01:00-01:30, before 05:00
+        [7 * 60 * m, 8 * 60 * m],
+        [22 * 60 * m, 23 * 60 * m + 15 * m],
+      ], 0);
+      expect(r, (firstOnMin: 420, lastOffMin: 1395));
+    });
+
+    test('a night session spanning 05:00 counts from 05:00', () {
+      final r = dayRhythm([
+        [4 * 60 * m, 5 * 60 * m + 20 * m],
+        [9 * 60 * m, 10 * 60 * m],
+      ], 0);
+      expect(r, (firstOnMin: 300, lastOffMin: 600));
+    });
+
+    test('nothing after 05:00 skips the day', () {
+      expect(dayRhythm([
+        [60 * m, 5 * 60 * m],
+      ], 0), isNull);
+      expect(dayRhythm([], 0), isNull);
+    });
+
+    test('the end is capped at 1440', () {
+      final start = 1000 * h;
+      final r = dayRhythm([
+        [start + 23 * h, start + 25 * h],
+      ], start);
+      expect(r, (firstOnMin: 1380, lastOffMin: 1440));
+    });
+  });
 }

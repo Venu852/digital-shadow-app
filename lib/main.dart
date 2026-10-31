@@ -8,6 +8,7 @@ import 'package:test_app/ui/consent_screen.dart';
 import 'package:test_app/ui/settings_screen.dart';
 import 'package:test_app/service/usage_reader.dart';
 import 'package:test_app/ui/results_screen.dart';
+import 'package:test_app/drift/drift_runner.dart';
 import 'package:test_app/sync/sync_service.dart';
 
 void main() {
@@ -122,7 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _refreshStored();
     UsageSync.syncRecentDays()
         .catchError((_) => 0)
-        .then((_) => SyncService.instance.run())
+        .then((_) => DriftRunner.instance.run())
         .catchError((_) => const SyncResult(SyncState.stopped));
     ShadowDb.getSetting('retention_days')
         .then((v) => ShadowDb.applyRetention(int.tryParse(v ?? '') ?? 30))

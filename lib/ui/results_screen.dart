@@ -2,6 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:test_app/data/db.dart';
+import 'package:test_app/drift/drift_engine.dart';
+import 'package:test_app/drift/drift_runner.dart';
+import 'package:test_app/service/usage_sync.dart';
+import 'package:test_app/sync/sync_service.dart';
 import 'package:test_app/ui/usage_summary_screen.dart';
 
 String _two(int v) => v.toString().padLeft(2, '0');
@@ -17,6 +21,26 @@ String _dur(Duration d) {
   final m = d.inMinutes;
   if (m < 60) return '$m min';
   return '${m ~/ 60}h ${m % 60}m';
+}
+
+const Map<DriftBand, Color> _bandColors = {
+  DriftBand.stable: Color(0xFF6366F1),
+  DriftBand.early: Color(0xFF818CF8),
+  DriftBand.elevated: Color(0xFFF59E0B),
+  DriftBand.high: Color(0xFFFB923C),
+};
+
+const Map<int, String> _checkinHelp = {1: 'very unsteady', 5: 'very steady'};
+
+final ButtonStyle _checkinStyle = ButtonStyle(
+  minimumSize: WidgetStateProperty.all(const Size(0, 40)),
+  padding: WidgetStateProperty.all(EdgeInsets.zero),
+);
+
+String _shortDay(String day) {
+  const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  final d = DateTime.parse(day);
+  return '${names[d.weekday - 1]} ${_two(d.day)}/${_two(d.month)}';
 }
 
 class _Win {
@@ -66,11 +90,195 @@ class _ResultsScreenState extends State<ResultsScreen> {
   List<_Bucket> _buckets = [];
   List<Map<String, Object?>> _sessions = [];
   int? _sel;
+  List<DayDrift> _drift = [];
+  Map<String, String> _tags = {};
+  Map<String, int> _checkins = {};
+  String? _openDay;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadDaily();
+  }
+
+  Future<void> _loadDaily() async {
+    try {
+      final today = UsageSync.dayKey(DateTime.now());
+      final rows = await ShadowDb.driftDays(
+          addDays(today, -DriftRunner.days), addDays(today, -1));
+      final drift = rows.map(driftFromRow).toList();
+      final tags = <String, String>{};
+      for (final d in drift) {
+        final item = d.established
+            ? await SyncService.instance.outbox.store.get(d.day)
+            : null;
+        tags[d.day] = item == null || item.failed
+            ? 'not shared'
+            : (item.sentAt != null ? 'uploaded' : 'waiting');
+      }
+      final checkins = await ShadowDb.checkins(addDays(today, -6), today);
+      if (mounted) {
+        setState(() {
+          _drift = drift;
+          _tags = tags;
+          _checkins = checkins;
+        });
+      }
+    } catch (_) {
+      // The daily cards stay empty if the tables cannot be read.
+    }
+  }
+
+  Future<void> _checkIn(int score) async {
+    try {
+      final today = UsageSync.dayKey(DateTime.now());
+      await ShadowDb.putCheckin(today, score);
+      if (mounted) setState(() => _checkins = {..._checkins, today: score});
+    } catch (_) {
+      // Not saved; the buttons keep the old value.
+    }
+  }
+
+  Widget _driftDetail(DayDrift d) {
+    final rows = <Widget>[
+      for (final k in signalKeys)
+        Row(
+          children: [
+            Expanded(child: Text(signalNames[k]!)),
+            Text(d.levels[k] == null
+                ? '$neutralLevel (not enough history)'
+                : '${d.levels[k]}'),
+          ],
+        ),
+    ];
+    final without = driftWithout(d.levels, d.dominant);
+    if (d.established && without != null) {
+      rows.add(Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text('Without ${signalNames[d.dominant]!.toLowerCase()} your '
+            'drift would be $without'),
+      ));
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Column(children: rows),
+    );
+  }
+
+  Widget _driftCard() {
+    final children = <Widget>[
+      const Text('Daily drift', style: TextStyle(fontWeight: FontWeight.bold)),
+      const Text(
+          'How far each day\'s phone-use rhythm moved from your own usual '
+          'days. Tap a day for its six signals.',
+          style: TextStyle(fontSize: 12)),
+    ];
+    if (_drift.isEmpty) {
+      children.add(const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Text('No completed days scored yet.'),
+      ));
+    }
+    for (final d in _drift) {
+      final drift = d.drift;
+      final band = drift == null ? null : driftBand(drift);
+      final checkin = _checkins[d.day];
+      children.add(InkWell(
+        onTap: () =>
+            setState(() => _openDay = _openDay == d.day ? null : d.day),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            children: [
+              SizedBox(width: 84, child: Text(_shortDay(d.day))),
+              if (band == null)
+                Expanded(
+                    child: Text('Calibrating, need ${d.needDays} more '
+                        'day${d.needDays == 1 ? '' : 's'}'))
+              else ...[
+                SizedBox(
+                    width: 28,
+                    child: Text('$drift',
+                        style: const TextStyle(fontWeight: FontWeight.bold))),
+                Container(
+                  width: 10,
+                  height: 10,
+                  margin: const EdgeInsets.only(right: 6),
+                  decoration: BoxDecoration(
+                      color: _bandColors[band], shape: BoxShape.circle),
+                ),
+                Expanded(child: Text(band.label)),
+              ],
+              if (checkin != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Text('check-in $checkin',
+                      style: const TextStyle(fontSize: 12)),
+                ),
+              Text(_tags[d.day] ?? 'not shared',
+                  style: const TextStyle(fontSize: 12)),
+            ],
+          ),
+        ),
+      ));
+      if (_openDay == d.day) children.add(_driftDetail(d));
+    }
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, children: children),
+      ),
+    );
+  }
+
+  Widget _checkinCard() {
+    final today = _checkins[UsageSync.dayKey(DateTime.now())];
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Daily check-in',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('How steady was your routine today?'),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var v = 1; v <= 5; v++)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Column(
+                        children: [
+                          v == today
+                              ? FilledButton(
+                                  style: _checkinStyle,
+                                  onPressed: () => _checkIn(v),
+                                  child: Text('$v'))
+                              : OutlinedButton(
+                                  style: _checkinStyle,
+                                  onPressed: () => _checkIn(v),
+                                  child: Text('$v')),
+                          Text(_checkinHelp[v] ?? '',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text('Check-ins stay on this phone.',
+                style: TextStyle(fontSize: 11)),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _load() async {
@@ -191,6 +399,10 @@ class _ResultsScreenState extends State<ResultsScreen> {
     final sel = _sel;
 
     final children = <Widget>[
+      _driftCard(),
+      const SizedBox(height: 8),
+      _checkinCard(),
+      const SizedBox(height: 16),
       SegmentedButton<int>(
         segments: const [
           ButtonSegment(value: 1, label: Text('1 hour')),
@@ -334,7 +546,7 @@ class _ResultsScreenState extends State<ResultsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Results')),
       body: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: () => Future.wait([_load(), _loadDaily()]),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),

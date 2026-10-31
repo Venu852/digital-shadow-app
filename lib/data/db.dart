@@ -41,13 +41,24 @@ class ShadowDb {
         'CREATE TABLE IF NOT EXISTS outbox(day TEXT PRIMARY KEY, payload_json TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, created_at TEXT NOT NULL, sent_at TEXT)');
   }
 
+  static Future<void> _createDriftTables(Database db) async {
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS day_rhythm(day TEXT PRIMARY KEY, first_on_min INTEGER, last_off_min INTEGER)');
+    // levels_json holds the six levels (null = no usable baseline) and, for
+    // calibrating days, need_days.
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS drift_days(day TEXT PRIMARY KEY, drift INTEGER, levels_json TEXT, confidence INTEGER, baseline TEXT, dominant TEXT, tz TEXT, built_at TEXT NOT NULL)');
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS checkins(day TEXT PRIMARY KEY, score INTEGER NOT NULL CHECK(score BETWEEN 1 AND 5), created_at TEXT NOT NULL)');
+  }
+
   static Future<Database> open() async {
     final existing = _db;
     if (existing != null) return existing;
     final path = '${await getDatabasesPath()}/digital_shadow.db';
     final db = await openDatabase(
       path,
-      version: 8,
+      version: 9,
       onConfigure: (db) async {
         try {
           await db.rawQuery('PRAGMA journal_mode=WAL');
@@ -65,6 +76,7 @@ class ShadowDb {
         await _createHourlyTable(db);
         await _createBehaviorTable(db);
         await _createOutboxTable(db);
+        await _createDriftTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 3) await _createSettingsTable(db);
@@ -87,6 +99,7 @@ class ShadowDb {
           }
         }
         if (oldVersion < 8) await _createOutboxTable(db);
+        if (oldVersion < 9) await _createDriftTables(db);
       },
     );
     _db = db;
@@ -326,6 +339,9 @@ class ShadowDb {
     await db.delete('app_usage_hourly', where: 'day < ?', whereArgs: [cutDay]);
     await db.delete('usage_behavior_hourly',
         where: 'day < ?', whereArgs: [cutDay]);
+    await db.delete('day_rhythm', where: 'day < ?', whereArgs: [cutDay]);
+    await db.delete('drift_days', where: 'day < ?', whereArgs: [cutDay]);
+    await db.delete('checkins', where: 'day < ?', whereArgs: [cutDay]);
   }
 
   static Future<void> deleteAllSettings() async {
@@ -359,6 +375,9 @@ class ShadowDb {
     await db.delete('settings',
         where: 'setting_key = ?', whereArgs: ['motion_baseline']);
     await db.delete('outbox');
+    await db.delete('day_rhythm');
+    await db.delete('drift_days');
+    await db.delete('checkins');
     await deleteSettings(syncSettingKeys);
   }
 
@@ -398,5 +417,94 @@ class ShadowDb {
     return db.query('outbox',
         where: 'sent_at IS NULL AND last_error IS NOT NULL',
         orderBy: 'day DESC');
+  }
+
+  // ---- Daily drift ----
+
+  static Future<void> putDayRhythm(
+      String day, int firstOnMin, int lastOffMin) async {
+    final db = await open();
+    await db.insert('day_rhythm',
+        {'day': day, 'first_on_min': firstOnMin, 'last_off_min': lastOffMin},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Per-day totals for the drift engine: behaviour sums (with screen time
+  /// in hours 0-4), app minutes and the day's rhythm.
+  static Future<List<Map<String, Object?>>> driftInputs(
+      String fromDay, String toDay) async {
+    final db = await open();
+    final b = await db.rawQuery(
+        'SELECT day, SUM(opens) AS opens, SUM(switches) AS switches, SUM(wakeups) AS wakeups, SUM(unlocks) AS unlocks, SUM(screen_ms) AS screen_ms, SUM(CASE WHEN hour < 5 THEN screen_ms ELSE 0 END) AS night_ms FROM usage_behavior_hourly WHERE day >= ? AND day <= ? GROUP BY day',
+        [fromDay, toDay]);
+    final a = await db.rawQuery(
+        'SELECT day, SUM(total_ms) AS app_ms FROM app_usage_hourly WHERE day >= ? AND day <= ? GROUP BY day',
+        [fromDay, toDay]);
+    final r = await db.query('day_rhythm',
+        where: 'day >= ? AND day <= ?', whereArgs: [fromDay, toDay]);
+    final out = <String, Map<String, Object?>>{};
+    Map<String, Object?> row(Object? day) =>
+        out.putIfAbsent('$day', () => {'day': '$day'});
+    for (final m in b) {
+      row(m['day']).addAll({...m, 'has_behavior': 1});
+    }
+    for (final m in a) {
+      row(m['day'])['app_ms'] = m['app_ms'];
+    }
+    for (final m in r) {
+      row(m['day']).addAll(
+          {'first_on_min': m['first_on_min'], 'last_off_min': m['last_off_min']});
+    }
+    return out.values.toList();
+  }
+
+  static Future<bool> anyUnlocks() async {
+    final db = await open();
+    final r = await db.rawQuery(
+        'SELECT 1 FROM usage_behavior_hourly WHERE unlocks > 0 LIMIT 1');
+    return r.isNotEmpty;
+  }
+
+  static Future<void> putDriftDays(List<Map<String, Object?>> rows) async {
+    final db = await open();
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final r in rows) {
+        batch.insert('drift_days', r,
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  /// Newest first.
+  static Future<List<Map<String, Object?>>> driftDays(
+      String fromDay, String toDay) async {
+    final db = await open();
+    return db.query('drift_days',
+        where: 'day >= ? AND day <= ?',
+        whereArgs: [fromDay, toDay],
+        orderBy: 'day DESC');
+  }
+
+  static Future<void> putCheckin(String day, int score) async {
+    final db = await open();
+    await db.insert(
+        'checkins',
+        {
+          'day': day,
+          'score': score,
+          'created_at': DateTime.now().toUtc().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  static Future<Map<String, int>> checkins(String fromDay, String toDay) async {
+    final db = await open();
+    final r = await db.query('checkins',
+        where: 'day >= ? AND day <= ?', whereArgs: [fromDay, toDay]);
+    return {
+      for (final m in r) '${m['day']}': ((m['score'] as num?) ?? 0).toInt()
+    };
   }
 }
