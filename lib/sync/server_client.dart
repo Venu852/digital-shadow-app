@@ -2,6 +2,23 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kReleaseMode;
+
+/// Release builds talk to the server only over HTTPS.
+const String releaseHttpsOnly = 'Use an https:// address in release builds.';
+
+/// Why [url] cannot be a server address in a release build, or null when it
+/// can (or when [releaseMode] is false). Debug builds keep the loopback
+/// cleartext option, which [ServerClient] checks itself.
+String? releaseAddressProblem(String url, {bool releaseMode = kReleaseMode}) {
+  if (!releaseMode) return null;
+  final uri = Uri.tryParse(url.trim());
+  if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+    return releaseHttpsOnly;
+  }
+  return null;
+}
+
 /// Why a request did not succeed. [none] means it did.
 enum ApiFailure {
   none,
@@ -92,11 +109,16 @@ class ServerClient {
   /// [cleartextHosts] (debug builds talking to a local server).
   final bool allowCleartext;
 
+  /// True in release builds: only https:// addresses, whatever
+  /// [allowCleartext] says. Injectable so tests can check it.
+  final bool releaseMode;
+
   ServerClient(
       this.baseUrl, {
         this.token,
         this.timeout = const Duration(seconds: 10),
         this.allowCleartext = false,
+        this.releaseMode = kReleaseMode,
       });
 
   /// Returns null and a reason when the address cannot be used.
@@ -109,6 +131,9 @@ class ServerClient {
     }
     if (base.host.isEmpty || (base.scheme != 'http' && base.scheme != 'https')) {
       return (null, 'Invalid server address');
+    }
+    if (releaseMode && base.scheme != 'https') {
+      return (null, releaseHttpsOnly);
     }
     if (base.scheme == 'http' &&
         !(allowCleartext && cleartextHosts.contains(base.host))) {

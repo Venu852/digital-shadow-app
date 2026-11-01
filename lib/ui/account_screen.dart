@@ -16,7 +16,16 @@ class AccountScreen extends StatefulWidget {
   /// Called after the pairing or upload state may have changed.
   final VoidCallback? onChanged;
 
-  const AccountScreen({super.key, this.embedded = false, this.onChanged});
+  /// True in release builds, where only https:// server addresses are
+  /// accepted. Injectable so tests can check it.
+  final bool releaseMode;
+
+  const AccountScreen({
+    super.key,
+    this.embedded = false,
+    this.onChanged,
+    this.releaseMode = kReleaseMode,
+  });
 
   @override
   State<AccountScreen> createState() => _AccountScreenState();
@@ -165,6 +174,9 @@ class _AccountScreenState extends State<AccountScreen> {
     String? error;
     if (url.isEmpty) {
       error = 'Enter the server address.';
+    } else if (releaseAddressProblem(url, releaseMode: widget.releaseMode)
+        case final problem?) {
+      error = problem;
     } else if (user.isEmpty || password.isEmpty) {
       error = 'Enter your username and password.';
     } else if (name.isEmpty || name.length > 40) {
@@ -174,7 +186,8 @@ class _AccountScreenState extends State<AccountScreen> {
       setState(() => _pairError = error);
       return;
     }
-    final r = await ServerClient(url, allowCleartext: kDebugMode)
+    final r = await ServerClient(url,
+            allowCleartext: kDebugMode, releaseMode: widget.releaseMode)
         .pair(user, password, name);
     if (!r.ok) {
       setState(() => _pairError = r.message);
