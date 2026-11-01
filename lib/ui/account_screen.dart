@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:test_app/data/db.dart';
+import 'package:test_app/demo/demo_mode.dart';
 import 'package:test_app/drift/drift_engine.dart';
 import 'package:test_app/drift/drift_runner.dart';
 import 'package:test_app/service/usage_sync.dart';
@@ -239,10 +240,12 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Future<void> _syncNow() => _guard(() async {
+    if (DemoMode.on) return _snack(demoNotUploaded);
     _snack(_resultText(await DriftRunner.instance.run(force: true)));
   });
 
   Future<void> _sendTestSummary() => _guard(() async {
+    if (DemoMode.on) return _snack(demoNotUploaded);
     final now = DateTime.now();
     await _sync.outbox.enqueue(UsageSync.dayKey(now), {
       'drift': 34,

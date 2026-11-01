@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:test_app/data/db.dart';
+import 'package:test_app/demo/demo_mode.dart';
 import 'package:test_app/drift/drift_engine.dart';
 import 'package:test_app/sync/sync_service.dart';
 
@@ -88,6 +89,8 @@ String canonicalJson(Object? v) {
   return jsonEncode(sort(v));
 }
 
+const String demoNotUploaded = 'Demo mode is on, so nothing was uploaded.';
+
 /// Scores the recent completed days, queues the changed ones and uploads.
 class DriftRunner {
   static const int days = 14;
@@ -97,13 +100,18 @@ class DriftRunner {
   final DateTime Function() _clock;
   final Duration Function(String day) _offsetFor;
 
+  /// True while demo mode is on: nothing is scored, stored or uploaded.
+  final bool Function() _isDemo;
+
   DriftRunner({
     required this.store,
     required this.sync,
     DateTime Function()? clock,
     Duration Function(String day)? offsetFor,
+    bool Function()? isDemo,
   })  : _clock = clock ?? DateTime.now,
-        _offsetFor = offsetFor ?? localOffsetAt;
+        _offsetFor = offsetFor ?? localOffsetAt,
+        _isDemo = isDemo ?? (() => DemoMode.on);
 
   static DriftRunner? _instance;
 
@@ -116,6 +124,7 @@ class DriftRunner {
 
   /// Rebuilds drift_days for the last [days] completed days, newest first.
   Future<List<DayDrift>> rebuild() async {
+    if (_isDemo()) return const [];
     final now = _clock();
     final yesterday = addDays(_dayKey(now), -1);
     final raw = await store.inputs(
@@ -132,6 +141,7 @@ class DriftRunner {
   /// queued or sent for it. Returns how many were queued; nothing is queued
   /// when the phone is not paired or sharing is off.
   Future<int> enqueueChanged(List<DayDrift> scored) async {
+    if (_isDemo()) return 0;
     if (!await sync.isPaired()) return 0;
     if (!SyncService.sharingLevels
         .contains(await sync.settings.get('sharing_level'))) {
@@ -157,6 +167,9 @@ class DriftRunner {
 
   /// Scores and queues (best effort), then lets the sync service upload.
   Future<SyncResult> run({bool force = false}) async {
+    if (_isDemo()) {
+      return const SyncResult(SyncState.stopped, message: demoNotUploaded);
+    }
     try {
       await enqueueChanged(await rebuild());
     } catch (_) {

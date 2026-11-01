@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:test_app/data/db.dart';
+import 'package:test_app/demo/demo_mode.dart';
 import 'package:test_app/drift/drift_engine.dart';
 import 'package:test_app/drift/drift_runner.dart';
 import 'package:test_app/service/usage_sync.dart';
+import 'package:test_app/ui/how_it_works_screen.dart';
 import 'package:test_app/ui/theme.dart';
 import 'package:test_app/ui/today_model.dart';
 
@@ -88,12 +89,14 @@ class _WhyScreenState extends State<WhyScreen> {
   void initState() {
     super.initState();
     widget.tab?.addListener(_onTab);
+    DemoMode.enabled.addListener(_load);
     _load();
   }
 
   @override
   void dispose() {
     widget.tab?.removeListener(_onTab);
+    DemoMode.enabled.removeListener(_load);
     super.dispose();
   }
 
@@ -104,11 +107,11 @@ class _WhyScreenState extends State<WhyScreen> {
   Future<void> _load() async {
     try {
       final today = UsageSync.dayKey(DateTime.now());
-      final rows = await ShadowDb.driftDays(
+      final rows = await DemoMode.repository.driftDays(
           addDays(today, -DriftRunner.days), addDays(today, -1));
       if (mounted) {
         setState(() {
-          _latest = rows.isEmpty ? null : driftFromRow(rows.first);
+          _latest = rows.isEmpty ? null : rows.first;
           _loaded = true;
         });
       }
@@ -118,20 +121,8 @@ class _WhyScreenState extends State<WhyScreen> {
   }
 
   void _howItWorks() {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('How this works'),
-        content: const Text(
-            'Each completed day, six signals are compared with your own '
-            'earlier days. A fuller explanation is coming in a later '
-            'version.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
-        ],
-      ),
-    );
+    Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const HowItWorksScreen()));
   }
 
   Widget _signalRow(SignalShare s) {

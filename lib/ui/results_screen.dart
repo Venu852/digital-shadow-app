@@ -75,7 +75,11 @@ class _Bucket {
 }
 
 class ResultsScreen extends StatefulWidget {
-  const ResultsScreen({super.key});
+  /// Shown inside the Trends tab's "Motion and sessions" section: no app
+  /// bar, no own scrolling and no link to the Usage tab.
+  final bool embedded;
+
+  const ResultsScreen({super.key, this.embedded = false});
 
   @override
   State<ResultsScreen> createState() => _ResultsScreenState();
@@ -530,6 +534,11 @@ class _ResultsScreenState extends State<ResultsScreen> {
         child: Text('${_dm(st)} · ${dur ?? 'running or ended unexpectedly'} · '
             '$windows windows · $fl flagged'),
       ));
+    }
+
+    if (widget.embedded) {
+      return Column(
+          crossAxisAlignment: CrossAxisAlignment.start, children: children);
     }
 
     children.add(const SizedBox(height: 16));

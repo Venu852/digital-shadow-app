@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:test_app/demo/demo_mode.dart';
+import 'package:test_app/ui/demo_banner.dart';
 import 'package:test_app/ui/privacy_tab.dart';
-import 'package:test_app/ui/results_screen.dart';
 import 'package:test_app/ui/today_screen.dart';
+import 'package:test_app/ui/trends_screen.dart';
 import 'package:test_app/ui/usage_summary_screen.dart';
 import 'package:test_app/ui/why_screen.dart';
 
@@ -50,7 +52,7 @@ class _AppShellState extends State<AppShell> {
       case 0:
         return TodayScreen(tab: _tab, index: 0);
       case 1:
-        return const ResultsScreen();
+        return TrendsScreen(tab: _tab, index: 1);
       case 2:
         return WhyScreen(tab: _tab, index: 2);
       case 3:
@@ -64,13 +66,27 @@ class _AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     final current = _tab.value;
     _built.putIfAbsent(current, () => _page(current));
+    final pages = IndexedStack(
+      index: current,
+      children: [
+        for (var i = 0; i < shellDestinations.length; i++)
+          _built[i] ?? const SizedBox.shrink(),
+      ],
+    );
     return Scaffold(
-      body: IndexedStack(
-        index: current,
-        children: [
-          for (var i = 0; i < shellDestinations.length; i++)
-            _built[i] ?? const SizedBox.shrink(),
-        ],
+      // Every tab shows the demo banner above its own app bar.
+      body: ValueListenableBuilder<bool>(
+        valueListenable: DemoMode.enabled,
+        // The same tree either way, so the tabs keep their state.
+        builder: (context, demo, _) => Column(
+          children: [
+            const DemoBanner(safeTop: true),
+            Expanded(
+              child: MediaQuery.removePadding(
+                  context: context, removeTop: demo, child: pages),
+            ),
+          ],
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: current,

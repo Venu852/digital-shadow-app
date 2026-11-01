@@ -52,13 +52,20 @@ class ShadowDb {
         'CREATE TABLE IF NOT EXISTS checkins(day TEXT PRIMARY KEY, score INTEGER NOT NULL CHECK(score BETWEEN 1 AND 5), created_at TEXT NOT NULL)');
   }
 
+  static Future<void> _createSuggestTables(Database db) async {
+    await db.execute(
+        "CREATE TABLE IF NOT EXISTS suggestion_states(key TEXT PRIMARY KEY, status TEXT NOT NULL CHECK(status IN ('trying','not_now','not_useful','done')), since TEXT NOT NULL, until TEXT)");
+    await db.execute(
+        "CREATE TABLE IF NOT EXISTS experiments(id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT NOT NULL, signal TEXT, start_day TEXT NOT NULL, end_day TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('running','done','cancelled')), before_avg REAL, after_avg REAL, finished_at TEXT)");
+  }
+
   static Future<Database> open() async {
     final existing = _db;
     if (existing != null) return existing;
     final path = '${await getDatabasesPath()}/digital_shadow.db';
     final db = await openDatabase(
       path,
-      version: 9,
+      version: 10,
       onConfigure: (db) async {
         try {
           await db.rawQuery('PRAGMA journal_mode=WAL');
@@ -77,6 +84,7 @@ class ShadowDb {
         await _createBehaviorTable(db);
         await _createOutboxTable(db);
         await _createDriftTables(db);
+        await _createSuggestTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 3) await _createSettingsTable(db);
@@ -100,6 +108,7 @@ class ShadowDb {
         }
         if (oldVersion < 8) await _createOutboxTable(db);
         if (oldVersion < 9) await _createDriftTables(db);
+        if (oldVersion < 10) await _createSuggestTables(db);
       },
     );
     _db = db;
@@ -378,6 +387,8 @@ class ShadowDb {
     await db.delete('day_rhythm');
     await db.delete('drift_days');
     await db.delete('checkins');
+    await db.delete('suggestion_states');
+    await db.delete('experiments');
     await deleteSettings(syncSettingKeys);
   }
 
@@ -513,5 +524,34 @@ class ShadowDb {
     return {
       for (final m in r) '${m['day']}': ((m['score'] as num?) ?? 0).toInt()
     };
+  }
+
+  // ---- Suggestions and experiments (never uploaded) ----
+
+  static Future<List<Map<String, Object?>>> suggestionStates() async {
+    final db = await open();
+    return db.query('suggestion_states');
+  }
+
+  static Future<void> putSuggestionState(Map<String, Object?> row) async {
+    final db = await open();
+    await db.insert('suggestion_states', row,
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Newest first.
+  static Future<List<Map<String, Object?>>> experiments() async {
+    final db = await open();
+    return db.query('experiments', orderBy: 'id DESC');
+  }
+
+  static Future<int> insertExperiment(Map<String, Object?> row) async {
+    final db = await open();
+    return db.insert('experiments', row);
+  }
+
+  static Future<void> updateExperiment(int id, Map<String, Object?> row) async {
+    final db = await open();
+    await db.update('experiments', row, where: 'id = ?', whereArgs: [id]);
   }
 }

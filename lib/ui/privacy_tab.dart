@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:test_app/data/db.dart';
+import 'package:test_app/demo/demo_mode.dart';
 import 'package:test_app/service/usage_reader.dart';
 import 'package:test_app/sync/sync_service.dart';
 import 'package:test_app/ui/account_screen.dart';
 import 'package:test_app/ui/consent_screen.dart';
+import 'package:test_app/ui/how_it_works_screen.dart';
 import 'package:test_app/ui/sharing.dart';
 import 'package:test_app/ui/theme.dart';
 import 'package:test_app/ui/today_model.dart';
@@ -175,6 +177,7 @@ class _PrivacyTabState extends State<PrivacyTab> with WidgetsBindingObserver {
     );
     if (!ok) return;
     await ShadowDb.deleteAll();
+    DemoMode.clearMemory();
     await ShadowDb.deleteSettings(const [
       SharingControl.pausedSinceKey,
       SharingControl.beforePauseKey,
@@ -196,6 +199,7 @@ class _PrivacyTabState extends State<PrivacyTab> with WidgetsBindingObserver {
     }
     await ShadowDb.deleteAll();
     await ShadowDb.deleteAllSettings();
+    DemoMode.set(false);
     await ConsentState.withdraw();
     if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
   }
@@ -387,6 +391,23 @@ class _PrivacyTabState extends State<PrivacyTab> with WidgetsBindingObserver {
     ],
   ];
 
+  List<Widget> _demoSection() => [
+    _section('Demo'),
+    ValueListenableBuilder<bool>(
+      valueListenable: DemoMode.enabled,
+      builder: (context, on, _) => SwitchListTile(
+        title: const Text(DemoMode.toggleLabel),
+        subtitle: const Text(
+          'Shows a made-up 21-day story on Today, Trends and Why. Nothing is '
+          'saved or uploaded while it is on, and turning it off brings back '
+          'your own data.',
+        ),
+        value: on,
+        onChanged: DemoMode.set,
+      ),
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final options = [7, 14, 30, 90];
@@ -398,6 +419,7 @@ class _PrivacyTabState extends State<PrivacyTab> with WidgetsBindingObserver {
           ..._sharingSection(),
           ..._contextSection(),
           ..._sentSection(),
+          ..._demoSection(),
           _section('Account and pairing'),
           AccountScreen(embedded: true, onChanged: _load),
           _section('Permissions'),
@@ -484,6 +506,14 @@ class _PrivacyTabState extends State<PrivacyTab> with WidgetsBindingObserver {
               leading: const Icon(Icons.check, color: ShadowColors.primary),
               title: Text(g),
             ),
+          ListTile(
+            title: const Text('How this works'),
+            subtitle: const Text('The signals, your baseline and what is shared'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const HowItWorksScreen()),
+            ),
+          ),
           const Divider(),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 0, 16, 24),

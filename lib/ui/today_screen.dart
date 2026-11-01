@@ -4,14 +4,17 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:test_app/data/db.dart';
+import 'package:test_app/demo/demo_mode.dart';
 import 'package:test_app/drift/drift_engine.dart';
 import 'package:test_app/drift/drift_runner.dart';
 import 'package:test_app/service/task_handler.dart';
 import 'package:test_app/service/usage_model.dart';
 import 'package:test_app/service/usage_reader.dart';
 import 'package:test_app/service/usage_sync.dart';
+import 'package:test_app/suggest/suggestion_service.dart';
 import 'package:test_app/sync/sync_service.dart';
 import 'package:test_app/ui/sharing.dart';
+import 'package:test_app/ui/suggestions_screen.dart';
 import 'package:test_app/ui/theme.dart';
 import 'package:test_app/ui/today_model.dart';
 
@@ -96,6 +99,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   List<DataBanner> _banners = const [];
   Map<String, int> _behavior = const {};
   UsageInsights? _insights;
+  SuggestionView? _suggestions;
 
   String _fmt(Object? v) => v is num ? v.toStringAsFixed(3) : '-';
 
@@ -141,6 +145,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.tab?.addListener(_onTab);
+    DemoMode.enabled.addListener(_load);
     FlutterForegroundTask.addTaskDataCallback(_onData);
     _initService();
     FlutterForegroundTask.isRunningService.then((v) {
@@ -166,6 +171,7 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
   void dispose() {
     _ticker?.cancel();
     widget.tab?.removeListener(_onTab);
+    DemoMode.enabled.removeListener(_load);
     WidgetsBinding.instance.removeObserver(this);
     FlutterForegroundTask.removeTaskDataCallback(_onData);
     super.dispose();
@@ -207,16 +213,23 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
     final today = UsageSync.dayKey(now);
     final yesterday = addDays(today, -1);
     try {
-      final rows = await ShadowDb.driftDays(
+      final repo = DemoMode.repository;
+      final rows = await repo.driftDays(
           addDays(today, -DriftRunner.days), yesterday);
-      final inputs = await const DbDriftStore()
-          .inputs(addDays(yesterday, -(baselineWindowDays - 1)), yesterday);
+      final dataDays = await repo.dataDays(
+          addDays(yesterday, -(baselineWindowDays - 1)), yesterday);
       final ctx = await ShadowDb.getSetting(personalContextKey);
-      final model = buildTodayModel(rows.map(driftFromRow).toList(),
-          dataDays: inputs.where((r) => r.hasData).length, context: ctx);
+      final model =
+          buildTodayModel(rows, dataDays: dataDays, context: ctx);
       if (mounted) setState(() => _model = model);
     } catch (_) {
       // The drift card keeps its last state.
+    }
+    try {
+      final view = await loadSuggestionView();
+      if (mounted) setState(() => _suggestions = view);
+    } catch (_) {
+      // The suggestions card keeps its last state.
     }
     try {
       final sharing = await SharingControl.instance.load();
@@ -421,11 +434,13 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
         children: [
           Expanded(child: _title(_running ? 'Session running' : 'Idle')),
           FilledButton(
-            onPressed: _running ? _stop : _start,
+            onPressed: _running ? _stop : (DemoMode.on ? null : _start),
             child: Text(_running ? 'Stop session' : 'Start session'),
           ),
         ],
       ),
+      if (!_running && DemoMode.on)
+        Text('Sessions do not start in demo mode.', style: _secondary),
       if (_running && start != null)
         Text('Running for ${_elapsed(DateTime.now().difference(start))}',
             style: _secondary),
@@ -651,8 +666,11 @@ class _TodayScreenState extends State<TodayScreen> with WidgetsBindingObserver {
                 Text(m.horizon),
               ]),
             ],
-            _glance(),
-            if (ins != null && ins.dataDays > 0) ...[
+            if (_suggestions != null)
+              SuggestionsSummaryCard(view: _suggestions!, onReturn: _load),
+            // Usage from this phone is left out while the drift is simulated.
+            if (!DemoMode.on) _glance(),
+            if (!DemoMode.on && ins != null && ins.dataDays > 0) ...[
               _predicted(ins),
               _unusual(ins),
             ],
