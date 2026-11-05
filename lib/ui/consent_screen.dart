@@ -57,8 +57,12 @@ class PrivacyDetails extends StatelessWidget {
         _b('Anything you type or touch.'),
         _b('Your location, contacts, photos, files, microphone or camera.'),
         _h(context, 'Where it stays'),
-        _b('All data is stored only on this phone, in the app\'s private '
-            'storage. This version does not upload anything.'),
+        _b('All data is stored on this phone, in the app\'s private storage. '
+            'Nothing is sent anywhere unless you pair this phone with a server '
+            'and choose a sharing level in Privacy. Then only a small daily '
+            'summary (a drift number and a few signal levels) is sent, never '
+            'app names, hours of use or raw motion. You can stop sharing or '
+            'delete it at any time.'),
         _b('You can delete everything or change how long data is kept in '
             'Settings, and you can switch off Usage access in Android '
             'settings at any time.'),
